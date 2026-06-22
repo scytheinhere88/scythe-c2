@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCYTHE C2 Panel v5.2 - Dual Function</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --neon-green: #00ff41;
+        --neon-purple: #b026ff;
+        --neon-cyan: #00f3ff;
+        --neon-red: #ff0040;
+        --neon-yellow: #ffee00;
+        --dark-bg: #0a0a0f;
+        --darker-bg: #050508;
+        --panel-bg: rgba(10, 10, 15, 0.85);
+        --input-bg: rgba(0, 0, 0, 0.5);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: var(--dark-bg);
+        color: var(--neon-green);
+        font-family: 'Share Tech Mono', monospace;
+        min-height: 100vh;
+        overflow-x: hidden;
+      }
+
+      .bg-grid {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: linear-gradient(rgba(0, 255, 65, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 255, 65, 0.03) 1px, transparent 1px);
+        background-size: 50px 50px;
+        pointer-events: none;
+        z-index: -1;
+      }
+
+      .scanline {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(to bottom, transparent 50%, rgba(0, 0, 0, 0.1) 50%);
+        background-size: 100% 4px;
+        pointer-events: none;
+        z-index: 1000;
+        animation: scanline 8s linear infinite;
+      }
+
+      @keyframes scanline {
+        0% {
+          transform: translateY(0);
+        }
+
+        100% {
+          transform: translateY(10px);
+        }
+      }
+
+      .header {
+        background: var(--darker-bg);
+        border-bottom: 2px solid var(--neon-green);
+        box-shadow: 0 0 20px rgba(0, 255, 65, 0.2);
+        padding: 20px 40px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+      }
+
+      .logo {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 28px;
+        font-weight: 900;
+        color: var(--neon-green);
+        text-shadow: 0 0 20px rgba(0, 255, 65, 0.5);
+        letter-spacing: 4px;
+      }
+
+      .logo span {
+        color: var(--neon-purple);
+        text-shadow: 0 0 20px rgba(176, 38, 255, 0.5);
+      }
+
+      .status-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--neon-green);
+        box-shadow: 0 0 10px var(--neon-green);
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+
+        0%,
+        100% {
+          opacity: 1;
+        }
+
+        50% {
+          opacity: 0.3;
+        }
+      }
+
+      .clock {
+        font-size: 18px;
+        color: var(--neon-cyan);
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+
+      .lock-btn {
+        background: none;
+        border: none;
+        color: var(--neon-cyan);
+        font-size: 24px;
+        cursor: pointer;
+        transition: 0.3s;
+        padding: 0 5px;
+      }
+
+      .lock-btn:hover {
+        color: var(--neon-green);
+        text-shadow: 0 0 15px var(--neon-green);
+      }
+
+      .main-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        padding: 30px 40px;
+        max-width: 1600px;
+        margin: 0 auto;
+      }
+
+      @media (max-width: 1200px) {
+        .main-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .panel {
+        background: var(--panel-bg);
+        border: 1px solid rgba(0, 255, 65, 0.2);
+        border-radius: 8px;
+        padding: 25px;
+        box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+        backdrop-filter: blur(10px);
+      }
+
+      .panel:hover {
+        border-color: rgba(0, 255, 65, 0.5);
+        box-shadow: 0 0 20px rgba(0, 255, 65, 0.2);
+      }
+
+      .panel-header {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 16px;
+        font-weight: 700;
+        border-bottom: 1px solid rgba(0, 255, 65, 0.2);
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+
+      .panel-header.green {
+        color: var(--neon-green);
+        border-bottom-color: rgba(0, 255, 65, 0.2);
+      }
+
+      .panel-header.purple {
+        color: var(--neon-purple);
+        border-bottom-color: rgba(176, 38, 255, 0.2);
+      }
+
+      .panel-header.cyan {
+        color: var(--neon-cyan);
+        border-bottom-color: rgba(0, 243, 255, 0.2);
+      }
+
+      .panel-header.red {
+        color: var(--neon-red);
+        border-bottom-color: rgba(255, 0, 64, 0.2);
+      }
+
+      .badge {
+        background: rgba(0, 255, 65, 0.1);
+        border: 1px solid var(--neon-green);
+        padding: 4px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+
+      .badge.purple {
+        background: rgba(176, 38, 255, 0.1);
+        border-color: var(--neon-purple);
+        color: var(--neon-purple);
+      }
+
+      .badge.red {
+        background: rgba(255, 0, 64, 0.1);
+        border-color: var(--neon-red);
+        color: var(--neon-red);
+      }
+
+      /* Attack Form */
+      .attack-form {
+        display: grid;
+        gap: 15px;
+      }
+
+      .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+      }
+
+      @media (max-width: 600px) {
+        .form-row {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .form-label {
+        font-size: 12px;
+        color: var(--neon-cyan);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .form-input,
+      .form-select {
+        background: var(--input-bg);
+        border: 1px solid rgba(0, 255, 65, 0.3);
+        border-radius: 6px;
+        padding: 12px 15px;
+        color: var(--neon-green);
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 14px;
+        outline: none;
+        transition: all 0.3s;
+      }
+
+      .form-input:focus,
+      .form-select:focus {
+        border-color: var(--neon-green);
+        box-shadow: 0 0 15px rgba(0, 255, 65, 0.2);
+      }
+
+      .form-select option {
+        background: var(--dark-bg);
+        color: var(--neon-green);
+      }
+
+      .form-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+      }
+
+      .form-checkbox input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--neon-green);
+        cursor: pointer;
+      }
+
+      .form-checkbox span {
+        font-size: 13px;
+        color: var(--neon-yellow);
+      }
+
+      .launch-btn {
+        background: linear-gradient(135deg, rgba(0, 255, 65, 0.2), rgba(0, 255, 65, 0.05));
+        border: 2px solid var(--neon-green);
+        color: var(--neon-green);
+        padding: 15px 30px;
+        border-radius: 8px;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 16px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        cursor: pointer;
+        transition: all 0.3s;
+        width: 100%;
+        margin-top: 10px;
+      }
+
+      .launch-btn:hover {
+        background: rgba(0, 255, 65, 0.3);
+        box-shadow: 0 0 30px rgba(0, 255, 65, 0.4);
+        transform: translateY(-2px);
+      }
+
+      .launch-btn:active {
+        transform: translateY(0);
+      }
+
+      .launch-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .stopall-btn {
+        background: linear-gradient(135deg, rgba(255, 0, 64, 0.2), rgba(255, 0, 64, 0.05));
+        border: 2px solid var(--neon-red);
+        color: var(--neon-red);
+        padding: 12px 25px;
+        border-radius: 8px;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 14px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        cursor: pointer;
+        transition: all 0.3s;
+        width: 100%;
+        margin-top: 10px;
+      }
+
+      .stopall-btn:hover {
+        background: rgba(255, 0, 64, 0.3);
+        box-shadow: 0 0 30px rgba(255, 0, 64, 0.4);
+      }
+
+      /* Stats */
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+      }
+
+      .stat-card {
+        background: rgba(0, 255, 65, 0.05);
+        border: 1px solid rgba(0, 255, 65, 0.15);
+        border-radius: 6px;
+        padding: 20px;
+        text-align: center;
+      }
+
+      .stat-card.purple {
+        background: rgba(176, 38, 255, 0.05);
+        border-color: rgba(176, 38, 255, 0.15);
+      }
+
+      .stat-value {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 32px;
+        font-weight: 900;
+        color: var(--neon-green);
+        text-shadow: 0 0 15px rgba(0, 255, 65, 0.3);
+      }
+
+      .stat-value.purple {
+        color: var(--neon-purple);
+        text-shadow: 0 0 15px rgba(176, 38, 255, 0.3);
+      }
+
+      .stat-value.cyan {
+        color: var(--neon-cyan);
+        text-shadow: 0 0 15px rgba(0, 243, 255, 0.3);
+      }
+
+      .stat-value.red {
+        color: var(--neon-red);
+        text-shadow: 0 0 15px rgba(255, 0, 64, 0.3);
+      }
+
+      .stat-label {
+        font-size: 12px;
+        color: rgba(0, 255, 65, 0.6);
+        text-transform: uppercase;
+      }
+
+      /* Attack List */
+      .attack-list {
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      .attack-list::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      .attack-list::-webkit-scrollbar-track {
+        background: rgba(0, 255, 65, 0.05);
+      }
+
+      .attack-list::-webkit-scrollbar-thumb {
+        background: var(--neon-green);
+        border-radius: 3px;
+      }
+
+      .attack-item {
+        background: rgba(0, 255, 65, 0.03);
+        border: 1px solid rgba(0, 255, 65, 0.1);
+        border-radius: 6px;
+        padding: 15px;
+        margin-bottom: 10px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .attack-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 3px;
+        height: 100%;
+        background: var(--neon-green);
+        box-shadow: 0 0 10px var(--neon-green);
+      }
+
+      .attack-item:hover {
+        background: rgba(0, 255, 65, 0.06);
+        border-color: rgba(0, 255, 65, 0.3);
+        transform: translateX(5px);
+        transition: all 0.3s;
+      }
+
+      .attack-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+
+      .attack-id {
+        font-family: 'Orbitron', font-size: 13px;
+        color: var(--neon-cyan);
+      }
+
+      .attack-method {
+        background: rgba(176, 38, 255, 0.1);
+        border: 1px solid var(--neon-purple);
+        color: var(--neon-purple);
+        padding: 3px 10px;
+        border-radius: 4px;
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .attack-target {
+        font-size: 13px;
+        color: rgba(0, 255, 65, 0.7);
+        margin-bottom: 8px;
+        word-break: break-all;
+      }
+
+      .attack-stats {
+        display: flex;
+        gap: 20px;
+        font-size: 12px;
+        color: rgba(0, 255, 65, 0.5);
+      }
+
+      .attack-stats span {
+        color: var(--neon-green);
+      }
+
+      .stop-btn {
+        background: rgba(255, 0, 64, 0.1);
+        border: 1px solid var(--neon-red);
+        color: var(--neon-red);
+        padding: 5px 15px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 11px;
+        text-transform: uppercase;
+        transition: all 0.3s;
+      }
+
+      .stop-btn:hover {
+        background: rgba(255, 0, 64, 0.2);
+        box-shadow: 0 0 10px rgba(255, 0, 64, 0.3);
+      }
+
+      .progress-container {
+        margin-top: 10px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+        height: 8px;
+        overflow: hidden;
+      }
+
+      .progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, var(--neon-green), var(--neon-cyan));
+        border-radius: 10px;
+        transition: width 1s;
+        box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+      }
+
+      .progress-text {
+        font-size: 11px;
+        color: rgba(0, 255, 65, 0.6);
+        margin-top: 5px;
+        text-align: right;
+      }
+
+      /* RPS Counter */
+      .rps-counter {
+        font-family: 'Orbitron';
+        font-size: 48px;
+        font-weight: 900;
+        color: var(--neon-green);
+        text-shadow: 0 0 30px rgba(0, 255, 65, 0.5);
+        text-align: center;
+        padding: 20px 0 5px 0;
+        position: relative;
+      }
+
+      .rps-counter::before {
+        content: 'RPS';
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 14px;
+        color: rgba(0, 255, 65, 0.5);
+        letter-spacing: 4px;
+      }
+
+      .graph-container {
+        height: 100px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 6px;
+        position: relative;
+        overflow: hidden;
+        margin-top: 10px;
+      }
+
+      .graph-line {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60%;
+        background: linear-gradient(180deg, rgba(0, 255, 65, 0.1), transparent);
+        border-top: 2px solid var(--neon-green);
+        box-shadow: 0 -5px 20px rgba(0, 255, 65, 0.2);
+        animation: graphPulse 3s ease-in-out infinite;
+      }
+
+      @keyframes graphPulse {
+
+        0%,
+        100% {
+          height: 40%;
+        }
+
+        50% {
+          height: 80%;
+        }
+      }
+
+      /* History Table (compact) */
+      .history-compact {
+        font-size: 13px;
+      }
+
+      .history-compact table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .history-compact th {
+        text-align: left;
+        padding: 8px 6px;
+        color: var(--neon-cyan);
+        border-bottom: 1px solid rgba(0, 243, 255, 0.2);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 11px;
+      }
+
+      .history-compact td {
+        padding: 8px 6px;
+        border-bottom: 1px solid rgba(0, 255, 65, 0.05);
+        color: rgba(0, 255, 65, 0.8);
+      }
+
+      .history-compact tr:hover td {
+        background: rgba(0, 255, 65, 0.05);
+      }
+
+      .history-compact .domain {
+        color: var(--neon-green);
+        font-weight: bold;
+      }
+
+      .history-compact .method-badge {
+        background: rgba(176, 38, 255, 0.15);
+        border: 1px solid var(--neon-purple);
+        color: var(--neon-purple);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 10px;
+        text-transform: uppercase;
+      }
+
+      .history-compact .num {
+        text-align: right;
+        font-family: 'Orbitron', monospace;
+        font-size: 12px;
+      }
+
+      .history-compact .num.cyan {
+        color: var(--neon-cyan);
+      }
+
+      .history-compact .num.yellow {
+        color: var(--neon-yellow);
+      }
+
+      .history-compact .num.green {
+        color: var(--neon-green);
+      }
+
+      .history-empty {
+        text-align: center;
+        padding: 20px 0;
+        color: rgba(0, 255, 65, 0.3);
+        font-style: italic;
+        font-size: 13px;
+      }
+
+      .footer {
+        text-align: center;
+        padding: 20px;
+        color: rgba(0, 255, 65, 0.3);
+        font-size: 12px;
+        border-top: 1px solid rgba(0, 255, 65, 0.1);
+        margin-top: 40px;
+      }
+
+      .footer span {
+        color: var(--neon-purple);
+      }
+
+      .full-width {
+        grid-column: 1 / -1;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: rgba(0, 255, 65, 0.3);
+      }
+
+      .alert {
+        padding: 12px 15px;
+        border-radius: 6px;
+        margin-bottom: 15px;
+        font-size: 13px;
+        display: none;
+        animation: fadeIn 0.3s;
+      }
+
+      .alert.success {
+        background: rgba(0, 255, 65, 0.1);
+        border: 1px solid var(--neon-green);
+        color: var(--neon-green);
+      }
+
+      .alert.error {
+        background: rgba(255, 0, 64, 0.1);
+        border: 1px solid var(--neon-red);
+        color: var(--neon-red);
+      }
+
+      .alert.show {
+        display: block;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* ---- Modal Hacker ---- */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(5px);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+        animation: modalFade 0.3s;
+      }
+
+      .modal-overlay.active {
+        display: flex;
+      }
+
+      @keyframes modalFade {
+        from {
+          opacity: 0;
+          transform: scale(0.9);
+        }
+
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      .modal-box {
+        background: var(--darker-bg);
+        border: 3px solid var(--neon-red);
+        border-radius: 12px;
+        padding: 40px 50px;
+        max-width: 500px;
+        width: 90%;
+        text-align: center;
+        box-shadow: 0 0 60px rgba(255, 0, 64, 0.3);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .modal-box::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255, 0, 64, 0.05) 2px, rgba(255, 0, 64, 0.05) 4px);
+        animation: glitch 1s steps(2) infinite;
+        pointer-events: none;
+      }
+
+      @keyframes glitch {
+        0% {
+          transform: translate(0);
+        }
+
+        20% {
+          transform: translate(-5px, 5px);
+        }
+
+        40% {
+          transform: translate(5px, -5px);
+        }
+
+        60% {
+          transform: translate(-3px, 3px);
+        }
+
+        80% {
+          transform: translate(3px, -3px);
+        }
+
+        100% {
+          transform: translate(0);
+        }
+      }
+
+      .modal-box .lock-icon {
+        font-size: 60px;
+        color: var(--neon-red);
+        text-shadow: 0 0 30px var(--neon-red);
+        margin-bottom: 10px;
+        display: block;
+        animation: pulse 1.5s infinite;
+      }
+
+      .modal-box h2 {
+        font-family: 'Orbitron', sans-serif;
+        font-size: 28px;
+        color: var(--neon-red);
+        text-shadow: 0 0 20px var(--neon-red);
+        letter-spacing: 4px;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+      }
+
+      .modal-box p {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 14px;
+        line-height: 1.6;
+        font-family: 'Share Tech Mono', monospace;
+        margin: 10px 0 20px;
+      }
+
+      .modal-box .hacker-text {
+        color: var(--neon-green);
+        font-size: 12px;
+        letter-spacing: 2px;
+        background: rgba(0, 255, 65, 0.05);
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px dashed rgba(0, 255, 65, 0.2);
+        margin-bottom: 20px;
+      }
+
+      .modal-close-btn {
+        background: rgba(255, 0, 64, 0.2);
+        border: 1px solid var(--neon-red);
+        color: var(--neon-red);
+        padding: 10px 30px;
+        border-radius: 6px;
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 14px;
+        cursor: pointer;
+        transition: 0.3s;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+
+      .modal-close-btn:hover {
+        background: rgba(255, 0, 64, 0.4);
+        box-shadow: 0 0 20px rgba(255, 0, 64, 0.3);
+      }
+
+      .modal-close-btn:active {
+        transform: scale(0.95);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bg-grid"></div>
+    <div class="scanline"></div>
+    <header class="header">
+      <div class="logo">SCYTHE <span>C2</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="status-dot"></div>
+        <span>SYSTEM ONLINE</span>
+      </div>
+      <div class="clock">
+        <span id="clock">00:00:00</span>
+        <button class="lock-btn" id="lockBtn" title="Admin Access (Triple Click)">🔒</button>
+      </div>
+    </header>
+    <!-- Modal -->
+    <div class="modal-overlay" id="modalOverlay">
+      <div class="modal-box">
+        <span class="lock-icon">⛔</span>
+        <h2>ACCESS DENIED</h2>
+        <p>This area is restricted to authorized personnel only.</p>
+        <div class="hacker-text">⚠️ UNAUTHORIZED ACCESS IS PROHIBITED ⚠️</div>
+        <p style="font-size:12px;color:rgba(255,255,255,0.4);">Your IP has been logged. Leave immediately.</p>
+        <button class="modal-close-btn" id="modalCloseBtn">✕ CLOSE</button>
+      </div>
+    </div>
+    <main class="main-grid">
+      <!-- Launch Attack Panel (full-width) -->
+      <div class="panel full-width">
+        <div class="panel-header green"> ⚔️ Launch Attack <span class="badge">DUAL FUNCTION</span>
+        </div>
+        <div id="alertBox" class="alert"></div>
+        <form class="attack-form" id="attackForm">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Method</label>
+              <select class="form-select" id="method" required>
+                <option value="">Select Method...</option>
+                <optgroup label="Layer 7 - HTTP/HTTPS (6 GACOR)">
+                  <option value="spectre">Spectre – WAF/CDN + Cloudflare Bypass</option>
+                  <option value="vortex">Vortex – HTTP/2 Frame Injection + Connection Hold</option>
+                  <option value="titan">Titan – Ultra-High Rate + Go High-Performance</option>
+                  <option value="phantom">Phantom – TLS + SSL Handshake Exhaustion</option>
+                  <option value="serpent">Serpent – Slowloris + Connection Hold (Slow)</option>
+                  <option value="storm">Storm – Volume GET Flood + HTTP Storm</option>
+                </optgroup>
+                <optgroup label="Layer 4 - Network (4 GACOR)">
+                  <option value="oblivion">Oblivion – Raw UDP + TCP SYN Flood</option>
+                  <option value="chaos">Chaos – Adaptive UDP/TCP Mixed (stdv2)</option>
+                  <option value="annihilator">Annihilator – Max Intensity + All Protocols (destroy+god)</option>
+                  <option value="ghost">Ghost – UDP Bypass + OVH Packet Craft</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Target</label>
+              <input type="text" class="form-input" id="target" placeholder="https://target.com or 1.1.1.1" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Port</label>
+              <input type="number" class="form-input" id="port" placeholder="443 or 80" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Duration (seconds)</label>
+              <input type="number" class="form-input" id="duration" placeholder="60" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Hold Time (seconds) - Optional</label>
+              <input type="number" class="form-input" id="holdTime" placeholder="3600 (max 86400)">
+            </div>
+            <div class="form-group" style="display:flex;align-items:flex-end;">
+              <label class="form-checkbox">
+                <input type="checkbox" id="useHold">
+                <span>Enable Hold Mode</span>
+              </label>
+            </div>
+          </div>
+          <button type="submit" class="launch-btn" id="launchBtn"> ⚔️ LAUNCH ATTACK </button>
+          <button type="button" class="stopall-btn" id="stopAllBtn"> 🛑 STOP ALL ATTACKS </button>
+        </form>
+      </div>
+      <!-- Row 1: System Status | Proxy Pool -->
+      <div class="panel">
+        <div class="panel-header green"> System Status <span class="badge" id="systemStatus">ONLINE</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="activeCount">0</div>
+            <div class="stat-label">Active Attacks</div>
+          </div>
+          <div class="stat-card purple">
+            <div class="stat-value purple" id="maxConcurrent">5</div>
+            <div class="stat-label">Max Concurrent</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value cyan" id="totalRps">0</div>
+            <div class="stat-label">Total RPS</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="totalRequests">0</div>
+            <div class="stat-label">Total Requests</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header purple"> Proxy Pool <span class="badge purple" id="proxyBadge">AUTO</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card purple">
+            <div class="stat-value purple" id="proxyCount">0</div>
+            <div class="stat-label">Alive Proxies</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value cyan" id="proxyTotal">0</div>
+            <div class="stat-label">Total Fetched</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="proxyRefresh">1s</div>
+            <div class="stat-label">Refresh Rate</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="proxyStatus">ACTIVE</div>
+            <div class="stat-label">Status</div>
+          </div>
+        </div>
+      </div>
+      <!-- Row 2: Live RPS Monitor | Attack History -->
+      <div class="panel">
+        <div class="panel-header cyan"> Live RPS Monitor <span class="badge purple">REAL-TIME</span>
+        </div>
+        <div class="rps-counter" id="rpsCounter">0</div>
+        <div class="graph-container">
+          <div class="graph-line" id="rpsGraph"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header purple"> 📜 Attack History (Last 5) <span class="badge purple">AVG RPS</span>
+        </div>
+        <div class="history-compact" id="historyContainer">
+          <div class="history-empty">No history yet.</div>
+        </div>
+      </div>
+      <!-- Row 3: Ongoing Attacks (full-width) -->
+      <div class="panel full-width">
+        <div class="panel-header green"> Ongoing Attacks <span class="badge" id="activeBadge">0/5</span>
+        </div>
+        <div class="attack-list" id="attackList">
+          <div class="empty-state">
+            <p>No active attacks running</p>
+            <p style="font-size:11px;margin-top:5px;">Launch from web panel or terminal</p>
+          </div>
+        </div>
+      </div>
+    </main>
+    <footer class="footer"> SCYTHE C2 Panel v5.2 | Dual Function | Max Hold: <span>86400s</span> | Max Concurrent: <span id="footerConcurrent">5</span> | Auto-Proxy: <span>1s refresh</span> | Sync: <span>Terminal + Web</span>
+    </footer>
+    <script>
+      // ===== CLOCK =====
+      function updateClock() {
+        document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', {
+          hour12: false
+        });
+      }
+      setInterval(updateClock, 1000);
+      updateClock();
+      // ===== ALERT =====
+      function showAlert(message, type) {
+        const alert = document.getElementById('alertBox');
+        alert.textContent = message;
+        alert.className = `alert ${type} show`;
+        setTimeout(() => alert.classList.remove('show'), 5000);
+      }
+      // ===== LOCK BUTTON =====
+      let clickCount = 0;
+      let clickTimer = null;
+      document.getElementById('lockBtn').addEventListener('click', function(e) {
+        clickCount++;
+        if (clickCount === 1) {
+          clickTimer = setTimeout(() => {
+            // Single click -> show modal
+            document.getElementById('modalOverlay').classList.add('active');
+            clickCount = 0;
+          }, 300);
+        } else if (clickCount === 3) {
+          clearTimeout(clickTimer);
+          clickCount = 0;
+          // Triple click -> open admin panel
+          window.location.href = '/admin';
+        }
+      });
+      // Close modal
+      document.getElementById('modalCloseBtn').addEventListener('click', function() {
+        document.getElementById('modalOverlay').classList.remove('active');
+      });
+      // Click outside modal to close
+      document.getElementById('modalOverlay').addEventListener('click', function(e) {
+        if (e.target === this) {
+          this.classList.remove('active');
+        }
+      });
+      // ===== SSE (real-time status) =====
+      let eventSource;
+
+      function connectSSE() {
+        eventSource = new EventSource('/api/stream');
+        eventSource.onmessage = function(event) {
+          try {
+            const data = JSON.parse(event.data);
+            updateDashboard(data);
+          } catch (e) {
+            /* ignore */ }
+        };
+        eventSource.onerror = function() {
+          setTimeout(connectSSE, 5000);
+        };
+      }
+      // ===== RENDER ACTIVE ATTACKS =====
+      function renderActiveAttacks(active) {
+        const container = document.getElementById('attackList');
+        if (!container) {
+          console.error("attackList container not found!");
+          return;
+        }
+        console.log("Rendering active attacks:", active);
+        if (!active || active.length === 0) {
+          container.innerHTML = `
+            
+											<div class="empty-state">
+												<p>No active attacks running</p>
+												<p style="font-size:11px;margin-top:5px;">Launch from web panel or terminal</p>
+											</div>
+        `;
+          return;
+        }
+        try {
+          container.innerHTML = active.map(atk => {
+            // Pastikan semua field ada, beri default jika undefined
+            const id = atk.id || 'unknown';
+            const method = atk.method || 'unknown';
+            const target = atk.target || 'unknown';
+            const rps = atk.rps || 0;
+            const total_requests = atk.total_requests || 0;
+            const proxy_count = atk.proxy_count_current || 0;
+            const start_time = atk.start_time || Math.floor(Date.now() / 1000);
+            const duration = atk.duration || 60;
+            const hold_time = atk.hold_time || duration;
+            const elapsed = Math.floor(Date.now() / 1000 - start_time);
+            const holdRemaining = Math.max(0, (hold_time) - elapsed);
+            const progress = Math.min(100, (elapsed / duration) * 100);
+            const holdProgress = Math.min(100, (elapsed / (hold_time)) * 100);
+            return `
+                
+											<div class="attack-item">
+												<div class="attack-header">
+													<span class="attack-id">${id.substring(0, 20)}...</span>
+													<div style="display:flex;gap:10px;align-items:center;">
+														<span class="attack-method">${method}</span>
+														<button class="stop-btn" onclick="stopAttack('${id}')">STOP</button>
+													</div>
+												</div>
+												<div class="attack-target">${target}</div>
+												<div class="attack-stats">
+													<span>RPS: ${rps}</span>
+													<span>Req: ${total_requests.toLocaleString()}</span>
+													<span>Proxy: ${proxy_count.toLocaleString()}</span>
+													<span>Duration: ${elapsed}s / ${duration}s</span>
+													<span>Hold: ${holdRemaining}s</span>
+												</div>
+												<div class="progress-container">
+													<div class="progress-bar" style="width: ${holdProgress}%"></div>
+												</div>
+												<div class="progress-text">
+                        Attack: ${progress.toFixed(1)}% | Hold: ${holdProgress.toFixed(1)}% | ${holdRemaining}s remaining
+                    </div>
+											</div>
+            `;
+          }).join('');
+        } catch (e) {
+          console.error("Error rendering attacks:", e);
+          container.innerHTML = `
+											<div class="empty-state">
+												<p>Error rendering attacks: ${e.message}</p>
+											</div>`;
+        }
+      }
+      // ===== RENDER HISTORY (compact) =====
+      function renderHistory(history) {
+        const container = document.getElementById('historyContainer');
+        if (!history || history.length === 0) {
+          container.innerHTML = `
+											<div class="history-empty">No history yet.</div>`;
+          return;
+        }
+        const items = history.slice(0, 5);
+        let html = `
+											<table>
+												<thead>
+													<tr>
+														<th>Domain</th>
+														<th>Method</th>
+														<th style="text-align:right;">Avg RPS</th>
+														<th style="text-align:right;">Req</th>
+														<th style="text-align:right;">Dur</th>
+													</tr>
+												</thead>
+												<tbody>`;
+        items.forEach(h => {
+          html += `
+                    
+													<tr>
+														<td class="domain">${h.domain}</td>
+														<td>
+															<span class="method-badge">${h.method}</span>
+														</td>
+														<td class="num cyan">${h.avg_rps.toLocaleString()}</td>
+														<td class="num yellow">${h.total_requests.toLocaleString()}</td>
+														<td class="num green">${h.duration}s</td>
+													</tr>
+                `;
+        });
+        html += `
+												</tbody>
+											</table>`;
+        container.innerHTML = html;
+      }
+      // ===== FETCH CONCURRENT & PROXY STATS (sync with admin) =====
+      async function fetchConcurrent() {
+        try {
+          const res = await fetch('/api/config/concurrent');
+          if (!res.ok) return;
+          const data = await res.json();
+          const val = data.max_concurrent || 5;
+          document.getElementById('maxConcurrent').textContent = val;
+          document.getElementById('footerConcurrent').textContent = val;
+        } catch (e) {
+          /* ignore */ }
+      }
+      async function fetchProxyStats() {
+        try {
+          const res = await fetch('/api/proxy/stats');
+          if (!res.ok) return;
+          const data = await res.json();
+          // Alive proxies
+          document.getElementById('proxyCount').textContent = (data.alive || 0).toLocaleString();
+          // Total fetched (total proxies in pool)
+          document.getElementById('proxyTotal').textContent = (data.total || 0).toLocaleString();
+          // Last scrap maybe not needed
+        } catch (e) {
+          /* ignore */ }
+      }
+      // ===== MAIN UPDATE =====
+      function updateDashboard(data) {
+        // Active attacks
+        const active = data.active_attacks || [];
+        document.getElementById('activeCount').textContent = active.length;
+        document.getElementById('activeBadge').textContent = `${active.length}/5`;
+        renderActiveAttacks(active);
+        // Total RPS & requests
+        const totalRps = data.total_rps || 0;
+        const totalReqs = data.total_requests || 0;
+        document.getElementById('totalRps').textContent = totalRps.toLocaleString();
+        document.getElementById('totalRequests').textContent = totalReqs.toLocaleString();
+        document.getElementById('rpsCounter').textContent = totalRps.toLocaleString();
+        // Proxy pool status from status (refreshing flag)
+        document.getElementById('proxyStatus').textContent = data.proxy_refreshing ? 'REFRESHING' : 'ACTIVE';
+        // History (if provided)
+        if (data.history) {
+          renderHistory(data.history);
+        }
+      }
+      // ===== FETCH HISTORY SEPARATELY =====
+      async function fetchHistory() {
+        try {
+          const res = await fetch('/api/history');
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.history) {
+            renderHistory(data.history);
+          }
+        } catch (e) {
+          /* ignore */ }
+      }
+      // ===== LAUNCH ATTACK =====
+      document.getElementById('attackForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const method = document.getElementById('method').value;
+        const target = document.getElementById('target').value;
+        const port = document.getElementById('port').value;
+        const duration = document.getElementById('duration').value;
+        const useHold = document.getElementById('useHold').checked;
+        const holdTime = useHold ? document.getElementById('holdTime').value : null;
+        if (!method || !target || !port || !duration) {
+          showAlert('Please fill all required fields', 'error');
+          return;
+        }
+        const btn = document.getElementById('launchBtn');
+        btn.disabled = true;
+        btn.textContent = 'LAUNCHING...';
+        try {
+          const response = await fetch('/api/attack', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              method,
+              target,
+              port,
+              duration,
+              hold_time: holdTime
+            })
+          });
+          const result = await response.json();
+          if (result.success) {
+            showAlert(`Attack launched: ${result.attack_id.substring(0, 20)}...`, 'success');
+            document.getElementById('method').value = '';
+            document.getElementById('target').value = '';
+            document.getElementById('port').value = '';
+            document.getElementById('duration').value = '';
+            document.getElementById('holdTime').value = '';
+          } else {
+            showAlert(result.error || 'Failed to launch attack', 'error');
+          }
+        } catch (error) {
+          showAlert('Network error: ' + error.message, 'error');
+        }
+        btn.disabled = false;
+        btn.textContent = '⚔️ LAUNCH ATTACK';
+      });
+      // ===== STOP ATTACK =====
+      async function stopAttack(attackId) {
+        try {
+          const response = await fetch(`/api/stop/${attackId}`, {
+            method: 'POST'
+          });
+          const result = await response.json();
+          if (result.success) {
+            showAlert('Attack stopped', 'success');
+          } else {
+            showAlert('Failed to stop attack', 'error');
+          }
+        } catch (error) {
+          showAlert('Failed to stop attack: ' + error.message, 'error');
+        }
+      }
+      // ===== STOP ALL =====
+      document.getElementById('stopAllBtn').addEventListener('click', async function() {
+        if (!confirm('Stop ALL active attacks?')) return;
+        try {
+          const response = await fetch('/api/stopall', {
+            method: 'POST'
+          });
+          const result = await response.json();
+          if (result.success) {
+            showAlert('All attacks stopped', 'success');
+          } else {
+            showAlert('Failed to stop all attacks', 'error');
+          }
+        } catch (error) {
+          showAlert('Error: ' + error.message, 'error');
+        }
+      });
+      // ===== INIT =====
+      // Initial load
+      fetch('/api/status').then(r => r.json()).then(data => {
+        updateDashboard(data);
+        if (!data.history) fetchHistory();
+      }).catch(() => {});
+      // SSE
+      connectSSE();
+      // Polling fallback
+      setInterval(() => {
+        fetch('/api/status').then(r => r.json()).then(data => {
+          updateDashboard(data);
+          if (!data.history) fetchHistory();
+        }).catch(() => {});
+      }, 5000);
+      // History fetch setiap 10 detik (jika tidak via status)
+      setInterval(fetchHistory, 10000);
+      // Sync concurrent & proxy stats from admin endpoints
+      fetchConcurrent();
+      fetchProxyStats();
+      setInterval(fetchConcurrent, 15000);
+      setInterval(fetchProxyStats, 15000);
+    </script>
+  </body>
+</html>

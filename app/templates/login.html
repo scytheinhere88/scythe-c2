@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCYTHE C2 - Secure Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --neon-green: #00ff41;
+            --neon-cyan: #00f3ff;
+            --neon-red: #ff0040;
+            --dark-bg: #0a0a0f;
+            --darker-bg: #050508;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--dark-bg);
+            color: var(--neon-green);
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .bg-grid {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-image: linear-gradient(rgba(0,255,65,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,65,0.03) 1px, transparent 1px);
+            background-size: 50px 50px; pointer-events: none; z-index: -1;
+        }
+        .login-container {
+            background: rgba(10, 10, 15, 0.9);
+            border: 1px solid rgba(0,255,65,0.3);
+            border-radius: 8px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 0 30px rgba(0,255,65,0.1);
+        }
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 32px;
+            font-weight: 900;
+            text-align: center;
+            margin-bottom: 10px;
+            color: var(--neon-green);
+            text-shadow: 0 0 20px rgba(0,255,65,0.5);
+        }
+        .logo span { color: var(--neon-cyan); }
+        .subtitle {
+            text-align: center;
+            color: rgba(0,255,65,0.5);
+            font-size: 12px;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .form-group { margin-bottom: 20px; }
+        .form-group label {
+            display: block;
+            color: var(--neon-cyan);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        .form-control {
+            width: 100%;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid rgba(0,255,65,0.3);
+            border-radius: 6px;
+            padding: 12px 15px;
+            color: var(--neon-green);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.3s;
+        }
+        .form-control:focus {
+            border-color: var(--neon-green);
+            box-shadow: 0 0 15px rgba(0,255,65,0.2);
+        }
+        .btn-login {
+            width: 100%;
+            background: rgba(0,255,65,0.1);
+            border: 1px solid var(--neon-green);
+            color: var(--neon-green);
+            padding: 14px;
+            border-radius: 6px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-top: 10px;
+        }
+        .btn-login:hover {
+            background: rgba(0,255,65,0.25);
+            box-shadow: 0 0 20px rgba(0,255,65,0.3);
+        }
+        .error {
+            background: rgba(255,0,64,0.1);
+            border: 1px solid var(--neon-red);
+            color: var(--neon-red);
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            color: rgba(0,255,65,0.3);
+            font-size: 11px;
+        }
+    </style>
+<base target="_blank">
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="login-container">
+        <div class="logo">SCYTHE<span>C2</span></div>
+        <div class="subtitle">Secure Access Required</div>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <form action="/login" method="post">
+            <div class="form-group">
+                <label>🔐 Password</label>
+                <input type="password" name="password" class="form-control" placeholder="Enter access password..." required autofocus>
+            </div>
+            <button type="submit" class="btn-login">⚡ ACCESS SYSTEM</button>
+        </form>
+
+        <div class="footer">SCYTHE C2 v1.0.0 | Authorized Personnel Only</div>
+    </div>
+</body>
+</html>

