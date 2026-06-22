@@ -1,17 +1,9 @@
-# app/routes/auth.py - FIXED VERSION
-"""
-Authentication routes for SCYTHE C2.
-- GET /login → Show login page
-- POST /login → Process login
-- POST /logout → Logout user
-"""
-
-import logging
 from fastapi import APIRouter, Request, Response, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+import logging
 
-from app.core.auth import create_session, delete_session, LOGIN_PASSWORD
+from app.core.auth import create_session, delete_session, LOGIN_PASSWORD, is_authenticated
 
 # ========== LOGGER ==========
 logger = logging.getLogger("scythe_c2.routes.auth")
@@ -27,7 +19,6 @@ async def login_page(request: Request):
     # Jika sudah login, redirect ke dashboard
     token = request.cookies.get("scythe_session")
     if token:
-        from app.core.auth import is_authenticated
         if is_authenticated(token):
             logger.info("User already logged in, redirecting to dashboard")
             return RedirectResponse(url="/", status_code=302)
@@ -79,6 +70,3 @@ async def logout_process(request: Request, response: Response):
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie("scythe_session")
     return response
-
-# ========== NEW: Exception handler untuk 307 redirect ==========
-# Tambahin di main.py lifespan atau app exception handlers

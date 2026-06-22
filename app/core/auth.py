@@ -1,4 +1,3 @@
-# app/core/auth.py - FIXED VERSION
 """
 Authentication utilities for SCYTHE C2.
 Uses simple session-based authentication with password from .env.
@@ -57,20 +56,26 @@ async def require_auth(request: Request):
     If not authenticated, raise HTTPException 401 (for API) or redirect (for HTML).
     """
     token = request.cookies.get("scythe_session")
-    logger.debug(f"Session token: {token[:10] if token else 'None']}")
+    # FIX: Extract token preview before f-string to avoid bracket conflict
+    token_preview = token[:10] if token else "None"
+    logger.debug(f"Session token: {token_preview}")
 
     if not token or not is_authenticated(token):
         logger.info("Unauthenticated request")
-        
+
         # Check if request is API (JSON) or HTML page
         accept_header = request.headers.get("accept", "")
         if "application/json" in accept_header:
-            # API request → return 401
+            # API request -> return 401
             raise HTTPException(status_code=401, detail="Unauthorized. Please login.")
         else:
-            # HTML page request → redirect to login
-            raise HTTPException(status_code=307, headers={"Location": "/login"})
-    
+            # HTML page request -> redirect to login
+            raise HTTPException(
+                status_code=307,
+                detail="Redirecting to login",
+                headers={"Location": "/login"}
+            )
+
     return True
 
 async def optional_auth(request: Request):

