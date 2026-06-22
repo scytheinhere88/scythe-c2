@@ -460,15 +460,20 @@ class ProxyManager:
         return alive_proxies
 
     # ==================== SMART REFRESH ====================
-    async def refresh_source(self, source: ProxySource):
+    async def refresh_source(self, source: ProxySource, skip_health_check: bool = False):
         proxies = await self._fetch_source(source)
         if not proxies:
             return
 
-        alive_proxies = await self._mass_health_check(proxies)
-        if not alive_proxies:
-            logger.warning(f"[REFRESH] {source.name}: All {len(proxies)} dead")
-            return
+        # FIX: Skip health check on initial load to prevent blocking C2 startup
+        if skip_health_check:
+            logger.info(f"[REFRESH] {source.name}: Storing {len(proxies)} proxies without health check (initial load)")
+            alive_proxies = proxies  # Treat all as alive initially, check later
+        else:
+            alive_proxies = await self._mass_health_check(proxies)
+            if not alive_proxies:
+                logger.warning(f"[REFRESH] {source.name}: All {len(proxies)} dead")
+                return
 
         redis = await get_redis()
         added = 0
@@ -511,8 +516,8 @@ class ProxyManager:
         await redis.set(self.last_scrap_key, str(source.last_fetch))
         logger.info(f"[REFRESH] {source.name}: +{added} new, ~{updated} updated, {len(alive_proxies)} alive")
 
-    async def refresh_all(self, force: bool = False):
-        logger.info(f"[REFRESH] Full refresh starting... (force={force})")
+    async def refresh_all(self, force: bool = False, skip_health_check: bool = False):
+        logger.info(f"[REFRESH] Full refresh starting... (force={force}, skip_health={skip_health_check})")
         start = time.time()
 
         sorted_sources = sorted(self.sources, key=lambda s: s.priority, reverse=True)
@@ -527,7 +532,7 @@ class ProxyManager:
             logger.info("[REFRESH] All sources up to date")
             return
 
-        tasks = [self.refresh_source(src) for src in to_refresh]
+        tasks = [self.refresh_source(src, skip_health_check=skip_health_check) for src in to_refresh]
         await asyncio.gather(*tasks)
 
         elapsed = time.time() - start
