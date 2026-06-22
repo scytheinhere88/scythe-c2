@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SCYTHE ADMIN v8.1 - Real-Time Control Center</title>
+    <title>SCYTHE ADMIN v8.2 - Real-Time Control Center</title>
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -373,7 +373,7 @@
             font-size: 13px;
         }
 
-        /* ===== NEW: LIVE PROXY MONITOR STYLES ===== */
+        /* ===== LIVE PROXY MONITOR STYLES ===== */
         .proxy-monitor-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -412,7 +412,7 @@
         .proxy-source-item .rate { color: var(--neon-green); }
         .proxy-source-item .rate.bad { color: var(--neon-red); }
 
-        /* ===== NEW: RPS ALERT STYLES ===== */
+        /* ===== RPS ALERT STYLES ===== */
         .alert-card {
             background: rgba(0,0,0,0.3);
             border: 1px solid rgba(255,0,64,0.2);
@@ -433,7 +433,7 @@
         .alert-card .time { color: rgba(0,255,65,0.5); font-size: 11px; }
         .alert-card .cause { color: rgba(255,0,64,0.7); margin-top: 4px; }
 
-        /* ===== NEW: WEBSOCKET STATUS ===== */
+        /* ===== WEBSOCKET STATUS ===== */
         .ws-status {
             display: inline-flex;
             align-items: center;
@@ -457,7 +457,7 @@
             animation: pulse 1s infinite;
         }
 
-        /* ===== NEW: REFRESH LOG STYLES ===== */
+        /* ===== REFRESH LOG STYLES ===== */
         .refresh-log-container {
             max-height: 150px;
             overflow-y: auto;
@@ -473,6 +473,7 @@
         }
         .refresh-log-entry .time { color: rgba(0,255,65,0.4); margin-right: 8px; }
     </style>
+<base target="_blank">
 <base target="_blank">
 </head>
 <body>
@@ -494,7 +495,7 @@
     </header>
 
     <main class="main-grid">
-        <!-- ===== EXISTING: System Health ===== -->
+        <!-- ===== System Health ===== -->
         <div class="panel full-width">
             <div class="panel-header green">
                 🩺 System Health
@@ -514,7 +515,7 @@
             </div>
         </div>
 
-        <!-- ===== NEW: Live Proxy Monitor ===== -->
+        <!-- ===== Live Proxy Monitor ===== -->
         <div class="panel full-width">
             <div class="panel-header purple">
                 🔍 Live Proxy Monitor
@@ -548,7 +549,7 @@
             </div>
         </div>
 
-        <!-- ===== NEW: RPS Drop Alert ===== -->
+        <!-- ===== RPS Drop Alert ===== -->
         <div class="panel full-width">
             <div class="panel-header red">
                 🚨 RPS Drop Alert Monitor
@@ -563,7 +564,7 @@
             </div>
         </div>
 
-        <!-- ===== EXISTING: Proxy Management ===== -->
+        <!-- ===== Proxy Management ===== -->
         <div class="panel full-width">
             <div class="panel-header green">
                 🌐 Proxy Management
@@ -607,7 +608,7 @@
             </div>
         </div>
 
-        <!-- ===== EXISTING: Botnet & Stats ===== -->
+        <!-- ===== Botnet & Stats ===== -->
         <div class="panel">
             <div class="panel-header cyan">
                 🤖 Botnet Status
@@ -633,7 +634,7 @@
             </div>
         </div>
 
-        <!-- ===== EXISTING: Concurrent Control + RPS Limit ===== -->
+        <!-- ===== Concurrent Control + RPS Limit ===== -->
         <div class="panel">
             <div class="panel-header orange">
                 ⚙️ Control Center
@@ -666,7 +667,7 @@
             </div>
         </div>
 
-        <!-- ===== EXISTING: Ongoing Attacks ===== -->
+        <!-- ===== Ongoing Attacks ===== -->
         <div class="panel full-width">
             <div class="panel-header cyan">
                 🔥 Ongoing Attacks
@@ -677,7 +678,7 @@
             </div>
         </div>
 
-        <!-- ===== EXISTING: System Logs ===== -->
+        <!-- ===== System Logs ===== -->
         <div class="panel full-width">
             <div class="panel-header red">
                 📋 System Logs
@@ -691,7 +692,7 @@
     </main>
 
     <footer class="footer">
-        SCYTHE ADMIN v8.1 | Real-Time Control Center | <span>Full System Control</span> | Sync: <span>Dashboard + Admin</span>
+        SCYTHE ADMIN v8.2 | Real-Time Control Center | <span>Full System Control</span> | Sync: <span>Dashboard + Admin</span>
     </footer>
 
     <div id="alertBox" class="alert"></div>
@@ -747,7 +748,6 @@
                 wsConnected = false;
                 updateWsStatus(false);
                 addLog('WebSocket disconnected', 'alert');
-                // Auto-reconnect after 5 seconds
                 setTimeout(connectWebSocket, 5000);
             };
 
@@ -816,15 +816,48 @@
             addLog(`Health check completed. All online: ${allOnline}`, 'success');
         }
 
-        // ===== NEW: PROXY MONITOR =====
+        // ===== NEW: PROXY MONITOR (FIXED) =====
+        async function loadProxyMonitor() {
+            try {
+                const res = await fetch('/api/proxy/monitor');
+                if (!res.ok) throw new Error('Failed');
+                const data = await res.json();
+                if (data.success) {
+                    updateProxyMonitor(data);
+                }
+            } catch (e) {
+                addLog('Error loading proxy monitor: ' + e.message);
+            }
+        }
+
         function updateProxyMonitor(data) {
             if (data.total_scraped !== undefined) {
                 document.getElementById('monitorTotal').textContent = data.total_scraped;
                 document.getElementById('monitorAlive').textContent = data.alive_after_check;
-
                 const ready = data.alive_after_check || 0;
                 document.getElementById('monitorReady').textContent = ready;
                 document.getElementById('monitorReady').style.color = ready >= 50 ? 'var(--neon-green)' : 'var(--neon-red)';
+            }
+            if (data.sources && data.sources.length > 0) {
+                const container = document.getElementById('proxySourceList');
+                container.innerHTML = data.sources.map(s => {
+                    const rate = (s.success_rate * 100).toFixed(1);
+                    const rateClass = s.success_rate >= 0.5 ? '' : 'bad';
+                    return `
+                        <div class="proxy-source-item">
+                            <span class="name">${s.name}</span>
+                            <span class="rate ${rateClass}">${rate}% (${s.last_count})</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+            if (data.recent_logs && data.recent_logs.length > 0) {
+                const container = document.getElementById('refreshLogContainer');
+                container.innerHTML = data.recent_logs.map(log => {
+                    const time = new Date(log.timestamp * 1000).toLocaleTimeString();
+                    const rate = log.success_rate ? log.success_rate.toFixed(1) : '?';
+                    return `<div class="refresh-log-entry"><span class="time">${time}</span>[REFRESH] ${log.source}: ${log.alive_after_check}/${log.total_scraped} alive (${rate}%)</div>`;
+                }).join('');
             }
         }
 
@@ -836,8 +869,6 @@
             const successRate = data.success_rate ? data.success_rate.toFixed(1) : '?';
             entry.innerHTML = `<span class="time">${time}</span>[REFRESH] ${data.source}: ${data.alive_after_check}/${data.total_scraped} alive (${successRate}%)`;
             container.prepend(entry);
-
-            // Keep only last 20 entries
             while (container.children.length > 20) {
                 container.removeChild(container.lastChild);
             }
@@ -848,7 +879,6 @@
                 const res = await fetch('/api/proxy/status');
                 if (!res.ok) throw new Error('Failed');
                 const data = await res.json();
-
                 if (data.health && data.health.top_sources) {
                     const container = document.getElementById('proxySourceList');
                     container.innerHTML = data.health.top_sources.map(s => {
@@ -867,7 +897,7 @@
             }
         }
 
-        // ===== NEW: RPS ALERT =====
+        // ===== RPS ALERT =====
         let alertHistory = [];
 
         function addRpsAlert(alert) {
@@ -890,7 +920,6 @@
             `;
             container.prepend(div);
 
-            // Keep only last 10 alerts visible
             while (container.children.length > 10) {
                 container.removeChild(container.lastChild);
             }
@@ -918,7 +947,7 @@
             showAlert('Test alert triggered!', 'warning');
         }
 
-        // ===== EXISTING: PROXY MANAGEMENT =====
+        // ===== PROXY MANAGEMENT =====
         async function loadProxyStats() {
             try {
                 const res = await fetch('/api/proxy/stats');
@@ -966,6 +995,7 @@
                     addLog('Proxy pool refreshed.', 'success');
                     loadProxyStats();
                     loadProxyList();
+                    loadProxyMonitor();
                 } else {
                     showAlert('Failed to refresh: ' + data.error, 'error');
                 }
@@ -985,6 +1015,7 @@
                     addLog(`Removed ${data.removed} dead proxies.`, 'success');
                     loadProxyStats();
                     loadProxyList();
+                    loadProxyMonitor();
                 } else {
                     showAlert('Failed: ' + data.error, 'error');
                 }
@@ -1014,6 +1045,7 @@
                     addLog(`Scrapped ${data.added} proxies.`, 'success');
                     loadProxyStats();
                     loadProxyList();
+                    loadProxyMonitor();
                 } else {
                     showAlert('Scrap failed: ' + data.error, 'error');
                 }
@@ -1023,7 +1055,7 @@
             }
         }
 
-        // ===== EXISTING: BOTNET & STATS =====
+        // ===== BOTNET & STATS =====
         async function loadBotnetStats() {
             try {
                 const res = await fetch('/api/botnet/stats');
@@ -1038,7 +1070,7 @@
             }
         }
 
-        // ===== EXISTING: CONCURRENT CONTROL =====
+        // ===== CONCURRENT CONTROL =====
         async function setMaxConcurrent() {
             const val = parseInt(document.getElementById('maxConcurrentInput').value);
             if (isNaN(val) || val < 1) {
@@ -1078,7 +1110,7 @@
             }
         }
 
-        // ===== EXISTING: RPS LIMIT CONTROL =====
+        // ===== RPS LIMIT CONTROL =====
         async function loadRpsLimit() {
             try {
                 const res = await fetch('/api/config/rps-limit');
@@ -1119,7 +1151,7 @@
             }
         }
 
-        // ===== EXISTING: SERVICE CONTROL =====
+        // ===== SERVICE CONTROL =====
         async function restartService() {
             if (!confirm('Are you sure you want to restart the service?')) return;
             addLog('Restarting service...');
@@ -1157,7 +1189,7 @@
             }
         }
 
-        // ===== EXISTING: ONGOING ATTACKS =====
+        // ===== ONGOING ATTACKS =====
         async function loadActiveAttacks() {
             try {
                 const res = await fetch('/api/attack/active');
@@ -1256,7 +1288,7 @@
             }
         }
 
-        // ===== NEW: UPDATE FROM PERIODIC =====
+        // ===== UPDATE FROM PERIODIC =====
         function updateFromPeriodic(data) {
             if (data.proxy) {
                 document.getElementById('totalProxy').textContent = data.proxy.alive || 0;
@@ -1273,6 +1305,7 @@
             checkHealth();
             loadProxyStats();
             loadProxyList();
+            loadProxyMonitor();  // FIX: Load proxy monitor on init
             loadBotnetStats();
             loadCurrentConcurrent();
             loadRpsLimit();
@@ -1286,6 +1319,7 @@
                 loadCurrentConcurrent();
                 loadRpsLimit();
                 loadProxySources();
+                loadProxyMonitor();  // FIX: Poll proxy monitor
             }, 15000);
 
             setInterval(loadProxyList, 30000);
@@ -1295,7 +1329,7 @@
         // ===== INIT =====
         connectWebSocket();
         initPolling();
-        addLog('Admin panel v8.1 loaded.', 'success');
+        addLog('Admin panel v8.2 loaded.', 'success');
         addLog('WebSocket connecting...');
         addLog('All systems ready.', 'success');
     </script>

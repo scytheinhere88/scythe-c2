@@ -1,7 +1,7 @@
 """
 Status routes for SCYTHE C2.
-- /api/status → full system status (JSON)
-- /api/stream → Server-Sent Events (SSE) for real-time updates
+- /api/status -> full system status (JSON)
+- /api/stream -> Server-Sent Events (SSE) for real-time updates
 """
 
 import json
@@ -19,32 +19,20 @@ router = APIRouter(prefix="/api", tags=["status"])
 
 
 async def _get_status_data(request: Request) -> dict:
-    """
-    Helper to fetch all status data from managers.
-    Used by both /status and /stream endpoints.
-    """
-    # Get managers from app state (set in lifespan)
     attack_manager = request.app.state.attack_manager
     proxy_manager = request.app.state.proxy_manager
     history_manager = request.app.state.history_manager
     concurrent_manager = request.app.state.concurrent_manager
 
-    # Active attacks
     active_attacks = attack_manager.get_active_attacks()
-
-    # Total RPS & requests
     total_rps = sum(a.rps for a in active_attacks)
     total_requests = sum(a.total_requests for a in active_attacks)
 
-    # Proxy stats
     proxy_stats = await proxy_manager.get_stats()
     proxy_pool = proxy_stats.alive if proxy_stats else 0
     proxy_refreshing = False
 
-    # Max concurrent
     max_concurrent = await concurrent_manager.get_max()
-
-    # History (latest 5)
     history_entries = await history_manager.get_history(limit=5)
 
     return {
@@ -60,10 +48,6 @@ async def _get_status_data(request: Request) -> dict:
 
 @router.get("/status")
 async def get_status(request: Request):
-    """
-    Get full system status in JSON format.
-    Used by dashboard and admin for initial load and periodic polling.
-    """
     try:
         data = await _get_status_data(request)
         return data
@@ -82,25 +66,16 @@ async def get_status(request: Request):
 
 @router.head("/status")
 async def head_status():
-    """
-    HEAD request for health check (admin panel).
-    Returns 200 OK if the service is operational.
-    """
     return Response(status_code=200)
 
 
 @router.get("/stream")
 async def stream_status(request: Request):
-    """
-    Server-Sent Events (SSE) endpoint for real-time dashboard updates.
-    Sends the same data as /api/status every second.
-    """
     async def event_generator():
         while True:
             if await request.is_disconnected():
                 logger.debug("SSE client disconnected")
                 break
-
             try:
                 data = await _get_status_data(request)
                 yield {
@@ -113,7 +88,6 @@ async def stream_status(request: Request):
                     "event": "error",
                     "data": json.dumps({"error": str(e)})
                 }
-
             await asyncio.sleep(1)
 
     return EventSourceResponse(event_generator())
