@@ -9,7 +9,7 @@ uvicorn[standard]==0.34.0
 pydantic==2.10.4
 pydantic-settings==2.6.0
 python-dotenv==1.0.1
-starlette==0.45.2              # Required for HTTPException handler, WebSocket, SSE
+# starlette (auto-installed by FastAPI, do not pin)
 python-multipart==0.0.20       # Required for form parsing (login)
 
 # ---------- Templates (REQUIRED) ----------

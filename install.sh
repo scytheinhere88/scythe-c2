@@ -178,7 +178,7 @@ install_requirements() {
     pip install -r requirements.txt
 
     # Ensure critical packages
-    pip install jinja2 starlette
+    pip install jinja2
 
     log_ok "All Python dependencies installed"
 }
