@@ -425,8 +425,7 @@ async def clear_logs(request: Request):
         log_file = "logs/scythe-c2.log"
         if os.path.exists(log_file):
             with open(log_file, "w") as f:
-                f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [SYSTEM] Logs cleared by admin.
-")
+                f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [SYSTEM] Logs cleared by admin.\n")
 
         return JSONResponse(content={
             "success": True,

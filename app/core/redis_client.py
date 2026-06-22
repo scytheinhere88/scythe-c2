@@ -30,6 +30,10 @@ class RedisKeys:
         return f"{RedisKeys.PREFIX}proxy_alive"
 
     @staticmethod
+    def proxy_fast() -> str:
+        return f"{RedisKeys.PREFIX}proxy_fast"
+
+    @staticmethod
     def bot(bot_id: str) -> str:
         return f"{RedisKeys.PREFIX}bot:{bot_id}"
 

