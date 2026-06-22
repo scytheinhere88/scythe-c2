@@ -20,10 +20,6 @@ class AttackRequest(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("Target tidak boleh kosong")
-        # Sederhana: cek apakah ada http:// atau https://, kalau enggak tambahkan
-        if not v.startswith("http://") and not v.startswith("https://") and not re.match(r"^\d+\.\d+\.\d+\.\d+$", v):
-            # Bisa jadi domain tanpa protocol
-            pass
         return v
 
     @field_validator("rps_limit")
@@ -116,14 +112,23 @@ class AttackResponse(BaseModel):
     message: Optional[str] = None
 
 
-# ========== PROXY MODELS ==========
+# ========== PROXY MODELS (FIXED) ==========
 class ProxyItem(BaseModel):
-    """Single proxy entry."""
+    """Single proxy entry — FIXED: tambah protocol attribute."""
     ip: str = Field(..., description="IP address")
     port: int = Field(..., ge=1, le=65535, description="Port")
+    protocol: str = Field(default="http", description="Proxy protocol (http, https, socks4, socks5)")
 
     def __str__(self):
-        return f"{self.ip}:{self.port}"
+        return f"{self.protocol}://{self.ip}:{self.port}"
+
+    @property
+    def url(self) -> str:
+        return f"{self.protocol}://{self.ip}:{self.port}"
+
+    @property
+    def key(self) -> str:
+        return f"{self.protocol}://{self.ip}:{self.port}"
 
     @field_validator("ip")
     @classmethod
@@ -137,12 +142,21 @@ class ProxyItem(BaseModel):
                 raise ValueError("Invalid IP format")
         return v
 
+    @field_validator("protocol")
+    @classmethod
+    def validate_protocol(cls, v: str) -> str:
+        v = v.lower().strip()
+        if v not in ("http", "https", "socks4", "socks5"):
+            raise ValueError("Protocol must be http, https, socks4, or socks5")
+        return v
+
 
 class ProxyStats(BaseModel):
-    """Statistik proxy pool."""
+    """Statistik proxy pool — FIXED: tambah fast attribute."""
     total: int = 0
     alive: int = 0
     dead: int = 0
+    fast: int = 0  # FIX: tambahin ini
     last_scrap: Optional[str] = None  # "Never" atau timestamp
 
 

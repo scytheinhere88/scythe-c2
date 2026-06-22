@@ -1,11 +1,5 @@
 """
 Proxy management routes for SCYTHE C2.
-- GET  /api/proxy/stats         → Get proxy pool statistics
-- GET  /api/proxy/list          → List proxies (alive or all)
-- POST /api/proxy/refresh       → Refresh proxy pool (fetch from all sources)
-- POST /api/proxy/remove-dead   → Remove dead proxies from pool
-- POST /api/proxy/scrap         → Scrap proxies from custom URLs
-- HEAD /api/proxy/status        → Health check for proxy service
 """
 
 from fastapi import APIRouter, Request, HTTPException, Query
@@ -14,7 +8,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from app.core.logger import logger
-from app.core.models import ProxyScrapRequest, ProxyStats
+from app.core.models import ProxyScrapRequest, ProxyStats, ProxyItem
+from app.managers.proxy_manager import proxy_manager
 
 router = APIRouter(prefix="/api/proxy", tags=["proxy"])
 
@@ -23,7 +18,7 @@ router = APIRouter(prefix="/api/proxy", tags=["proxy"])
 async def get_proxy_stats(request: Request):
     """
     Get statistics about the proxy pool.
-    Returns total, alive, dead, and last scrap time.
+    Returns total, alive, dead, fast, and last scrap time.
     """
     proxy_manager = request.app.state.proxy_manager
     stats = await proxy_manager.get_stats()
@@ -37,14 +32,15 @@ async def list_proxies(
 ):
     """
     Get a list of proxies.
-    If alive=true, returns only alive proxies. Otherwise, returns all proxies in the pool.
+    If alive=true, returns only alive proxies with protocol.
+    Otherwise, returns all proxies in the pool.
     """
     proxy_manager = request.app.state.proxy_manager
 
     if alive:
         proxies = await proxy_manager.get_alive_proxies()
-        # Convert ProxyItem objects to dicts
-        result = [{"ip": p.ip, "port": p.port} for p in proxies]
+        # FIXED: Return protocol too
+        result = [{"ip": p.ip, "port": p.port, "protocol": p.protocol} for p in proxies]
     else:
         # Get all proxies from Redis hash
         redis = request.app.state.redis
@@ -52,9 +48,13 @@ async def list_proxies(
         keys = await redis.hkeys(pool_key)
         result = []
         for key in keys:
-            if ":" in key:
-                ip, port = key.split(":")
-                result.append({"ip": ip, "port": int(port)})
+            if "://" in key:
+                protocol, rest = key.split("://", 1)
+                ip, port = rest.rsplit(":", 1)
+                result.append({"ip": ip, "port": int(port), "protocol": protocol})
+            elif ":" in key:
+                ip, port = key.rsplit(":", 1)
+                result.append({"ip": ip, "port": int(port), "protocol": "http"})
 
     return {"proxies": result}
 
@@ -63,7 +63,6 @@ async def list_proxies(
 async def refresh_proxy_pool(request: Request):
     """
     Force a refresh of the proxy pool from all configured sources.
-    This will fetch fresh proxies from all URLs and update the pool.
     """
     proxy_manager = request.app.state.proxy_manager
     try:
@@ -79,7 +78,6 @@ async def refresh_proxy_pool(request: Request):
 async def remove_dead_proxies(request: Request):
     """
     Remove all dead proxies from the pool.
-    Returns the number of proxies removed.
     """
     proxy_manager = request.app.state.proxy_manager
     try:
@@ -98,9 +96,7 @@ async def remove_dead_proxies(request: Request):
 @router.post("/scrap")
 async def scrap_proxies(request: Request, scrap_req: ProxyScrapRequest):
     """
-    Scrap proxies from custom URLs provided in the request.
-    Expects JSON: { "urls": ["http://...", "http://..."] }
-    Returns the number of new proxies added.
+    Scrap proxies from custom URLs.
     """
     proxy_manager = request.app.state.proxy_manager
     try:
@@ -120,9 +116,7 @@ async def scrap_proxies(request: Request, scrap_req: ProxyScrapRequest):
 async def proxy_status(request: Request):
     """
     Health check endpoint for proxy service.
-    Returns 200 if the proxy manager is operational.
     """
-    # Just check if we can get stats
     try:
         proxy_manager = request.app.state.proxy_manager
         await proxy_manager.get_stats()

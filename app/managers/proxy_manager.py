@@ -28,8 +28,8 @@ BACKUP_SOURCE_ON_EMPTY = True
 MIN_POOL_SIZE_FOR_ATTACK = 50
 EMERGENCY_REFRESH_THRESHOLD = 20
 MAX_ATTACK_DURATION = 43200
-HEALTH_CHECK_BATCH_SIZE = 50  # REDUCED from 250
-HEALTH_CHECK_TIMEOUT = 4        # REDUCED from 6
+HEALTH_CHECK_BATCH_SIZE = 50
+HEALTH_CHECK_TIMEOUT = 4
 
 # ========== PROXY SOURCE DEFINITION ==========
 class ProxySource:
@@ -255,7 +255,7 @@ class ProxyData:
             uptime_minutes=data.get("uptime_minutes", 0.0),
         )
 
-# ========== PROXY MANAGER v8.1 — ADMIN PANEL READY ==========
+# ========== PROXY MANAGER v8.1 — FIXED ==========
 class ProxyManager:
     def __init__(self):
         self.sources = PROXY_SOURCES
@@ -269,12 +269,10 @@ class ProxyManager:
         self._cache_lock = asyncio.Lock()
         self._total_refreshed = 0
         self._total_dead = 0
-        # FIX: Shared session to prevent "Too many open files"
         self._shared_session: Optional[aiohttp.ClientSession] = None
         self._fetch_sem = asyncio.Semaphore(5)
         self._health_sem = asyncio.Semaphore(30)
 
-    # FIX: Shared aiohttp session with connection limits
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._shared_session is None or self._shared_session.closed:
             connector = aiohttp.TCPConnector(
@@ -285,7 +283,7 @@ class ProxyManager:
             )
             self._shared_session = aiohttp.ClientSession(
                 connector=connector,
-                trust_env=False,  # FIX: Prevent system proxy conflicts
+                trust_env=False,
                 timeout=aiohttp.ClientTimeout(total=30),
             )
         return self._shared_session
@@ -316,7 +314,6 @@ class ProxyManager:
                 else:
                     raw_proxies = self._parse_text(content)
 
-                # FIX: Limit max proxies per source
                 MAX_PROXIES_PER_SOURCE = 500
                 for ip, port in raw_proxies[:MAX_PROXIES_PER_SOURCE]:
                     if self._is_valid_ip(ip) and 1 <= port <= 65535:
@@ -735,13 +732,14 @@ class ProxyManager:
             logger.info(f"[ATTACK-{attack_id}] Long attack ({duration}s). Will refresh proxy {refresh_count}x.")
         return True
 
-    # ==================== PUBLIC API ====================
+    # ==================== PUBLIC API (FIXED) ====================
     async def get_stats(self) -> ProxyStats:
+        """FIXED: Return ProxyStats dengan fast attribute."""
         redis = await get_redis()
         total = await redis.hlen(self.pool_key)
         alive = await redis.zcard(self.alive_key)
         fast = await redis.zcard(self.fast_key)
-        dead = total - alive
+        dead = max(0, total - alive)
         last_scrap = await redis.get(self.last_scrap_key)
 
         if last_scrap:
@@ -755,6 +753,7 @@ class ProxyManager:
         return ProxyStats(total=total, alive=alive, dead=dead, fast=fast, last_scrap=dt)
 
     async def get_alive_proxies(self) -> List[ProxyItem]:
+        """FIXED: Return ProxyItem dengan protocol attribute."""
         redis = await get_redis()
         members = await redis.zrange(self.alive_key, 0, -1)
         proxies = []

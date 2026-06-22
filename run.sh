@@ -1,8 +1,8 @@
 #!/bin/bash
 # ================================================================
-# SCYTHE C2 - Startup Script v2.0 (MAXIMIZED)
-# Version: 2.0.0
-# Description: Production startup with pre-flight checks & monitoring
+# SCYTHE C2 - Startup Script
+# Version: 1.0.0
+# Description: Run the SCYTHE C2 backend server with proper environment
 # ================================================================
 
 set -e
@@ -13,9 +13,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-PURPLE='\033[0;35m'
 BOLD='\033[1m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
 # ========== CONFIGURATION ==========
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +25,7 @@ APP_MODULE="app.main:app"
 DEFAULT_PORT=1837
 DEFAULT_HOST="0.0.0.0"
 PID_FILE="$SCRIPT_DIR/.scythe.pid"
-LOG_FILE="$SCRIPT_DIR/logs/scythe-c2.log"
+LOG_FILE="$SCRIPT_DIR/logs/app.log"
 ENV_FILE="$SCRIPT_DIR/.env"
 
 # ========== FUNCTIONS ==========
@@ -40,8 +39,8 @@ print_banner() {
     echo "  ███████║╚██████╗   ██║      ██║   ██║  ██║███████╗"
     echo "  ╚══════╝ ╚═════╝   ╚═╝      ╚═╝   ╚═╝  ╚═╝╚══════╝"
     echo -e "${NC}"
-    echo -e "${BOLD}${GREEN}  SCYTHE C2 v2.0.0 - MAXIMIZED Startup${NC}"
-    echo -e "${CYAN}  ⚡ Production-ready with full pre-flight checks${NC}"
+    echo -e "${BOLD}${GREEN}  SCYTHE C2 v1.0.0 - Professional Botnet Controller${NC}"
+    echo -e "${BOLD}${CYAN}  ⚡ Ready to dominate.${NC}"
     echo ""
 }
 
@@ -57,231 +56,83 @@ usage() {
     echo "  -s, --stop          Stop the running server"
     echo "  -r, --restart       Restart the server"
     echo "  -l, --logs          Show live logs"
-    echo "  -c, --check         Run pre-flight checks only (no start)"
-    echo "  -v, --version       Show version"
     echo ""
     echo "Examples:"
     echo "  $0                  # Start in production mode"
-    echo "  $0 --dev            # Start with auto-reload"
+    echo "  $0 --dev            # Start with auto-reload (development)"
     echo "  $0 --background     # Start as daemon"
     echo "  $0 --stop           # Stop the daemon"
-    echo "  $0 --check          # Verify setup without starting"
+    echo "  $0 --logs           # View real-time logs"
     echo ""
 }
 
-log_info() {
-    echo -e "${BLUE}[$(date '+%H:%M:%S')]${NC} ${BOLD}$1${NC}"
-}
-
-log_ok() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
-
-log_warn() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
-log_error() {
-    echo -e "${RED}❌ $1${NC}"
-}
-
-# ========== PRE-FLIGHT CHECKS ==========
-
 check_redis() {
-    log_info "Checking Redis..."
+    echo -e "${YELLOW}🔍 Checking Redis...${NC}"
     if command -v redis-cli &> /dev/null; then
         if redis-cli ping &> /dev/null; then
-            log_ok "Redis is running"
+            echo -e "${GREEN}✅ Redis is running.${NC}"
             return 0
         else
-            log_error "Redis is not responding!"
-            echo "  Fix: sudo systemctl start redis-server"
-            return 1
+            echo -e "${RED}❌ Redis is not responding. Please start Redis:${NC}"
+            echo "  sudo systemctl start redis-server  # Linux"
+            echo "  brew services start redis          # macOS"
+            echo "  docker run -d -p 6379:6379 redis   # Docker"
+            exit 1
         fi
     else
-        log_warn "redis-cli not found. Assuming Redis is running on localhost:6379"
-        return 0
+        echo -e "${YELLOW}⚠️  redis-cli not found. Assuming Redis is running on localhost:6379${NC}"
     fi
 }
 
 check_python() {
-    log_info "Checking Python..."
+    echo -e "${YELLOW}🔍 Checking Python...${NC}"
     if ! command -v python3 &> /dev/null; then
-        log_error "Python3 not found!"
-        return 1
+        echo -e "${RED}❌ Python3 not found. Please install Python 3.10+.${NC}"
+        exit 1
     fi
-
     PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-    log_ok "Python $PYTHON_VERSION"
-    return 0
+    echo -e "${GREEN}✅ Python $PYTHON_VERSION detected.${NC}"
 }
 
 check_venv() {
-    log_info "Checking virtual environment..."
+    echo -e "${YELLOW}🔍 Checking virtual environment...${NC}"
     if [ -d "venv" ]; then
-        if [ -f "venv/bin/activate" ]; then
-            source venv/bin/activate
-            log_ok "Virtual environment activated"
-            return 0
-        fi
+        echo -e "${GREEN}✅ Virtual environment found. Activating...${NC}"
+        source venv/bin/activate
+    elif [ -d ".venv" ]; then
+        echo -e "${GREEN}✅ Virtual environment found. Activating...${NC}"
+        source .venv/bin/activate
+    else
+        echo -e "${YELLOW}⚠️  No virtual environment found. Creating one...${NC}"
+        python3 -m venv venv
+        source venv/bin/activate
+        echo -e "${GREEN}✅ Virtual environment created.${NC}"
     fi
-    log_error "Virtual environment not found! Run ./install.sh first"
-    return 1
 }
 
-check_dependencies() {
-    log_info "Checking Python dependencies..."
-    source venv/bin/activate
-
-    local missing=0
-    for pkg in fastapi uvicorn redis jinja2 starlette aiohttp; do
-        if ! python3 -c "import $pkg" 2>/dev/null; then
-            log_error "Missing package: $pkg"
-            missing=$((missing + 1))
+install_deps() {
+    echo -e "${YELLOW}🔍 Checking dependencies...${NC}"
+    if [ -f "requirements.txt" ]; then
+        # Check if installed
+        if ! pip show fastapi &> /dev/null; then
+            echo -e "${YELLOW}📦 Installing dependencies from requirements.txt...${NC}"
+            pip install --upgrade pip
+            pip install -r requirements.txt
+            echo -e "${GREEN}✅ Dependencies installed.${NC}"
+        else
+            echo -e "${GREEN}✅ Dependencies already installed.${NC}"
         fi
-    done
-
-    if [ $missing -gt 0 ]; then
-        log_warn "Installing missing dependencies..."
-        pip install -r requirements.txt
     else
-        log_ok "All dependencies installed"
+        echo -e "${RED}❌ requirements.txt not found.${NC}"
+        exit 1
     fi
-    return 0
 }
 
 check_dirs() {
-    log_info "Checking directory structure..."
-    mkdir -p logs data app/templates app/static backups
-
-    # Check critical files
-    local missing=0
-    for file in app/templates/dashboard.html app/templates/admin.html app/templates/login.html; do
-        if [ ! -f "$file" ]; then
-            log_error "Missing: $file"
-            missing=$((missing + 1))
-        fi
-    done
-
-    if [ $missing -gt 0 ]; then
-        log_warn "Some templates missing. Auth and UI may not work!"
-    else
-        log_ok "All templates found"
-    fi
-    return 0
+    echo -e "${YELLOW}🔍 Checking directories...${NC}"
+    mkdir -p logs data app/templates app/static
+    echo -e "${GREEN}✅ Directories verified.${NC}"
 }
-
-check_env() {
-    log_info "Checking .env configuration..."
-    if [ ! -f ".env" ]; then
-        log_error ".env not found! Run ./install.sh first"
-        return 1
-    fi
-
-    # Source .env for checks
-    set -a
-    source .env 2>/dev/null || true
-    set +a
-
-    log_ok ".env loaded"
-
-    # Check critical vars
-    if [ -z "$LOGIN_PASSWORD" ]; then
-        log_warn "LOGIN_PASSWORD not set! Using default: scythe88"
-    fi
-
-    return 0
-}
-
-check_port() {
-    log_info "Checking port availability..."
-    local port=$1
-
-    if command -v ss &> /dev/null; then
-        if ss -tlnp | grep -q ":$port "; then
-            log_warn "Port $port is already in use!"
-            ss -tlnp | grep ":$port "
-            return 1
-        fi
-    elif command -v netstat &> /dev/null; then
-        if netstat -tlnp 2>/dev/null | grep -q ":$port "; then
-            log_warn "Port $port is already in use!"
-            return 1
-        fi
-    fi
-
-    log_ok "Port $port is available"
-    return 0
-}
-
-check_memory() {
-    log_info "Checking system resources..."
-
-    if command -v free &> /dev/null; then
-        MEM_TOTAL=$(free -m | awk '/^Mem:/{print $2}')
-        MEM_AVAIL=$(free -m | awk '/^Mem:/{print $7}')
-
-        if [ "$MEM_TOTAL" -lt 512 ]; then
-            log_warn "Low memory: ${MEM_TOTAL}MB total. Recommended: 1GB+"
-        else
-            log_ok "Memory: ${MEM_TOTAL}MB total, ${MEM_AVAIL}MB available"
-        fi
-    fi
-
-    # Check disk space
-    DISK_AVAIL=$(df -m . | tail -1 | awk '{print $4}')
-    if [ "$DISK_AVAIL" -lt 100 ]; then
-        log_warn "Low disk space: ${DISK_AVAIL}MB available"
-    else
-        log_ok "Disk: ${DISK_AVAIL}MB available"
-    fi
-
-    return 0
-}
-
-check_health_endpoint() {
-    log_info "Testing health endpoint..."
-
-    # Quick check if server is already running
-    if curl -s http://localhost:$DEFAULT_PORT/health &> /dev/null; then
-        log_warn "Server already running on port $DEFAULT_PORT!"
-        return 1
-    fi
-
-    log_ok "Server not running (ready to start)"
-    return 0
-}
-
-run_preflight() {
-    echo ""
-    echo -e "${BOLD}${CYAN}🛫 RUNNING PRE-FLIGHT CHECKS${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-    local failed=0
-
-    check_python || failed=$((failed + 1))
-    check_venv || failed=$((failed + 1))
-    check_dependencies || failed=$((failed + 1))
-    check_dirs || failed=$((failed + 1))
-    check_env || failed=$((failed + 1))
-    check_redis || failed=$((failed + 1))
-    check_port $DEFAULT_PORT || failed=$((failed + 1))
-    check_memory || true  # Don't fail on memory warning
-    check_health_endpoint || failed=$((failed + 1))
-
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-    if [ $failed -gt 0 ]; then
-        log_error "$failed pre-flight check(s) failed!"
-        echo "  Fix issues above, then run again."
-        return 1
-    else
-        log_ok "All pre-flight checks passed!"
-        return 0
-    fi
-}
-
-# ========== SERVER CONTROL ==========
 
 start_server() {
     local mode=$1
@@ -290,7 +141,7 @@ start_server() {
     local daemon=$4
 
     echo ""
-    echo -e "${BOLD}${GREEN}🚀 STARTING SCYTHE C2 SERVER${NC}"
+    echo -e "${BOLD}${GREEN}🚀 Starting SCYTHE C2 Server...${NC}"
     echo -e "  Host: ${CYAN}$host${NC}"
     echo -e "  Port: ${CYAN}$port${NC}"
     echo -e "  Mode: ${CYAN}$mode${NC}"
@@ -301,32 +152,26 @@ start_server() {
 
     if [ "$mode" == "dev" ]; then
         cmd="$cmd --reload"
-        log_warn "Development mode with auto-reload enabled"
+        echo -e "${YELLOW}⚠️  Development mode with auto-reload enabled.${NC}"
     else
-        cmd="$cmd --no-reload"
+        # Production mode: no --reload flag
     fi
 
     if [ "$daemon" == "true" ]; then
-        log_info "Running in background (daemon mode)..."
+        # Run in background
+        echo -e "${YELLOW}📦 Running in background (daemon mode)...${NC}"
         nohup $cmd > $LOG_FILE 2>&1 &
         local pid=$!
         echo $pid > $PID_FILE
-        sleep 2
-
-        if ps -p $pid > /dev/null 2>&1; then
-            log_ok "Server started with PID: $pid"
-            echo -e "  ${CYAN}🌐 Dashboard: http://$host:$port/${NC}"
-            echo -e "  ${CYAN}🔐 Admin: http://$host:$port/admin${NC}"
-            echo -e "  ${CYAN}📋 Logs: tail -f $LOG_FILE${NC}"
-            echo -e "  ${CYAN}🛑 Stop: ./stop.sh or ./run.sh --stop${NC}"
-        else
-            log_error "Server failed to start! Check logs: $LOG_FILE"
-            return 1
-        fi
+        echo -e "${GREEN}✅ Server started with PID: $pid${NC}"
+        echo -e "${GREEN}📝 Logs: $LOG_FILE${NC}"
+        echo -e "${CYAN}🌐 Dashboard: http://$host:$port/${NC}"
+        echo -e "${CYAN}🔐 Admin: http://$host:$port/admin${NC}"
     else
-        log_info "Running in foreground (Ctrl+C to stop)"
-        echo -e "  ${CYAN}🌐 Dashboard: http://$host:$port/${NC}"
-        echo -e "  ${CYAN}🔐 Admin: http://$host:$port/admin${NC}"
+        # Run in foreground
+        echo -e "${GREEN}💻 Running in foreground (Ctrl+C to stop)${NC}"
+        echo -e "${CYAN}🌐 Dashboard: http://$host:$port/${NC}"
+        echo -e "${CYAN}🔐 Admin: http://$host:$port/admin${NC}"
         echo ""
         exec $cmd
     fi
@@ -336,75 +181,33 @@ stop_server() {
     if [ -f "$PID_FILE" ]; then
         local pid=$(cat $PID_FILE)
         if ps -p $pid > /dev/null 2>&1; then
-            log_info "Stopping server (PID: $pid)..."
+            echo -e "${YELLOW}🛑 Stopping server (PID: $pid)...${NC}"
             kill $pid
             sleep 2
             if ps -p $pid > /dev/null 2>&1; then
-                log_warn "Force killing..."
+                echo -e "${RED}⚠️  Force killing...${NC}"
                 kill -9 $pid
             fi
             rm -f $PID_FILE
-            log_ok "Server stopped"
+            echo -e "${GREEN}✅ Server stopped.${NC}"
         else
-            log_warn "PID file exists but process not running"
+            echo -e "${YELLOW}⚠️  PID file exists but process not running. Cleaning up...${NC}"
             rm -f $PID_FILE
         fi
     else
-        log_warn "No PID file. Trying pkill..."
-        pkill -f "uvicorn.*app.main" || log_warn "No running process found"
+        echo -e "${YELLOW}⚠️  No PID file found. Trying pkill...${NC}"
+        pkill -f "uvicorn.*app.main" || echo -e "${YELLOW}⚠️  No running process found.${NC}"
     fi
 }
 
 show_logs() {
     if [ -f "$LOG_FILE" ]; then
-        log_info "Showing live logs (Ctrl+C to exit)..."
+        echo -e "${GREEN}📋 Showing live logs (Ctrl+C to exit)...${NC}"
         tail -f $LOG_FILE
     else
-        log_error "Log file not found: $LOG_FILE"
+        echo -e "${RED}❌ Log file not found: $LOG_FILE${NC}"
         exit 1
     fi
-}
-
-show_status() {
-    echo -e "${BOLD}${CYAN}📊 SCYTHE C2 Status${NC}"
-    echo ""
-
-    # Check if running
-    if [ -f "$PID_FILE" ]; then
-        local pid=$(cat $PID_FILE)
-        if ps -p $pid > /dev/null 2>&1; then
-            echo -e "  Status: ${GREEN}RUNNING${NC} (PID: $pid)"
-        else
-            echo -e "  Status: ${RED}STOPPED${NC} (stale PID file)"
-        fi
-    else
-        echo -e "  Status: ${RED}STOPPED${NC}"
-    fi
-
-    # Show ports
-    echo -e "  API Port: $DEFAULT_PORT"
-    echo -e "  C2 Port: 4884"
-
-    # Show memory
-    if command -v free &> /dev/null; then
-        MEM_AVAIL=$(free -m | awk '/^Mem:/{print $7}')
-        echo -e "  Memory: ${MEM_AVAIL}MB available"
-    fi
-
-    # Show disk
-    DISK_AVAIL=$(df -m . | tail -1 | awk '{print $4}')
-    echo -e "  Disk: ${DISK_AVAIL}MB available"
-
-    # Show Redis
-    if redis-cli ping &> /dev/null; then
-        echo -e "  Redis: ${GREEN}Connected${NC}"
-    else
-        echo -e "  Redis: ${RED}Disconnected${NC}"
-    fi
-
-    echo ""
-    echo -e "  ${CYAN}Dashboard: http://localhost:$DEFAULT_PORT/${NC}"
-    echo -e "  ${CYAN}Admin: http://localhost:$DEFAULT_PORT/admin${NC}"
 }
 
 # ========== PARSE ARGUMENTS ==========
@@ -448,16 +251,8 @@ while [[ $# -gt 0 ]]; do
             ACTION="logs"
             shift
             ;;
-        -c|--check)
-            ACTION="check"
-            shift
-            ;;
-        -v|--version)
-            echo "SCYTHE C2 Startup Script v2.0.0"
-            exit 0
-            ;;
         *)
-            log_error "Unknown option: $1"
+            echo -e "${RED}❌ Unknown option: $1${NC}"
             usage
             exit 1
             ;;
@@ -476,24 +271,23 @@ case $ACTION in
         show_logs
         exit 0
         ;;
-    check)
-        run_preflight
-        exit $?
-        ;;
-    status)
-        show_status
-        exit 0
-        ;;
     restart)
-        log_info "Restarting server..."
+        echo -e "${YELLOW}🔄 Restarting server...${NC}"
         stop_server
         sleep 1
-        run_preflight || exit 1
-        start_server "$MODE" "$HOST" "$PORT" "$DAEMON"
-        exit 0
+        # Continue to start
         ;;
     start)
-        run_preflight || exit 1
-        start_server "$MODE" "$HOST" "$PORT" "$DAEMON"
+        # Default: start
         ;;
 esac
+
+# Run checks and start
+check_python
+check_venv
+install_deps
+check_redis
+check_dirs
+
+# If restart, we already stopped; now start
+start_server "$MODE" "$HOST" "$PORT" "$DAEMON"

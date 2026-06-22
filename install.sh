@@ -420,7 +420,7 @@ User=root
 WorkingDirectory=$(pwd)
 Environment=PATH=$(pwd)/venv/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=$(pwd)/.env
-ExecStart=$(pwd)/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 1837 --no-reload
+ExecStart=$(pwd)/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 1837
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=mixed
 Restart=on-failure
@@ -652,4 +652,15 @@ setup_nginx
 setup_ssl
 create_backup_script
 create_update_script
+
+set_permissions() {
+    log_step "Setting executable permissions..."
+    chmod +x run.sh 2>/dev/null || true
+    chmod +x stop.sh 2>/dev/null || true
+    chmod +x backup.sh 2>/dev/null || true
+    chmod +x update.sh 2>/dev/null || true
+    log_ok "Executable permissions set"
+}
+
+set_permissions
 show_success
