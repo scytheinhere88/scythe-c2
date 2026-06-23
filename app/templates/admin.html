@@ -12,6 +12,7 @@
             --neon-cyan: #00f3ff;
             --neon-red: #ff0040;
             --neon-yellow: #ffee00;
+            --neon-gold: #ffd700; 
             --neon-orange: #ff8800;
             --dark-bg: #0a0a0f;
             --darker-bg: #050508;
@@ -164,6 +165,18 @@
         .btn.orange:hover { background: rgba(255,136,0,0.25); box-shadow: 0 0 20px rgba(255,136,0,0.3); }
         .btn.purple { border-color: var(--neon-purple); color: var(--neon-purple); background: rgba(176,38,255,0.1); }
         .btn.purple:hover { background: rgba(176,38,255,0.25); box-shadow: 0 0 20px rgba(176,38,255,0.3); }
+
+
+        .panel-header.gold { 
+    color: var(--neon-gold); 
+    border-bottom-color: rgba(255,215,0,0.2); 
+}
+
+.badge.gold { 
+    background: rgba(255,215,0,0.1); 
+    border-color: var(--neon-gold); 
+    color: var(--neon-gold); 
+}
 
         .form-control {
             background: var(--input-bg);
@@ -619,6 +632,32 @@ https://api.proxy.com/list"></textarea>
                 </div>
             </div>
         </div>
+
+        <!-- TAMBAH INI setelah panel "Proxy Management" -->
+<div class="panel full-width">
+    <div class="panel-header gold">
+        🏆 Premium Proxy (IPRoyal Residential)
+        <span class="badge gold">PREMIUM</span>
+    </div>
+    <div class="proxy-monitor-grid" style="grid-template-columns: repeat(4, 1fr);">
+        <div class="proxy-monitor-card">
+            <div class="value" id="adminPremiumSessions" style="color: #ffd700;">0</div>
+            <div class="label">Active Sessions</div>
+        </div>
+        <div class="proxy-monitor-card">
+            <div class="value" id="adminPremiumRequests" style="color: #ffd700;">0</div>
+            <div class="label">Premium Requests</div>
+        </div>
+        <div class="proxy-monitor-card">
+            <div class="value" id="adminPremiumRatio" style="color: #ff8800;">0%</div>
+            <div class="label">Traffic Ratio</div>
+        </div>
+        <div class="proxy-monitor-card">
+            <div class="value" id="adminPremiumHealth" style="color: #00f3ff;">100%</div>
+            <div class="label">Health Score</div>
+        </div>
+    </div>
+</div>
 
         <div class="panel">
             <div class="panel-header cyan">
@@ -1266,6 +1305,41 @@ https://api.proxy.com/list"></textarea>
                 addLog('Error restarting service: ' + e.message);
             }
         }
+
+        // TAMBAH INI di dalam <script> block
+async function loadPremiumStats() {
+    try {
+        const res = await fetch('/api/proxy/monitor');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && data.health) {
+            const health = data.health;
+            const sessions = document.getElementById('adminPremiumSessions');
+            const requests = document.getElementById('adminPremiumRequests');
+            const ratio = document.getElementById('adminPremiumRatio');
+            const healthScore = document.getElementById('adminPremiumHealth');
+            
+            if (sessions) sessions.textContent = (health.premium_active_sessions || 0).toLocaleString();
+            if (requests) requests.textContent = (health.premium_total_requests || 0).toLocaleString();
+            
+            const ratioVal = Math.round((health.premium_ratio || 0) * 100);
+            if (ratio) {
+                ratio.textContent = ratioVal + '%';
+                ratio.style.color = ratioVal >= 50 ? '#ffd700' : ratioVal >= 30 ? '#ff8800' : '#ff0040';
+            }
+            
+            const hScore = Math.min(100, ratioVal * 1.5 + 10);
+            if (healthScore) {
+                healthScore.textContent = hScore.toFixed(0) + '%';
+                healthScore.style.color = hScore >= 80 ? '#00ff41' : hScore >= 50 ? '#ffee00' : '#ff0040';
+            }
+        }
+    } catch (e) {}
+}
+
+// TAMBAH INI di initPolling() function:
+// loadPremiumStats();
+// setInterval(loadPremiumStats, 15000);
 
         async function clearLogs() {
             if (!confirm('Clear all system logs?')) return;

