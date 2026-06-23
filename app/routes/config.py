@@ -42,27 +42,35 @@ async def get_concurrent(request: Request):
 async def set_concurrent(request: Request, config_req: ConcurrentConfigRequest):
     """
     Set a new maximum concurrent attacks limit.
-    The value must be between 1 and 100, and cannot be lower than the current number of active attacks.
+    The value must be between 1 and 100.
+    FIX: If value is less than active attacks, auto-correct to active_count + 1 instead of blocking.
     """
     concurrent_manager = request.app.state.concurrent_manager
     attack_manager = request.app.state.attack_manager
 
     active_count = len(attack_manager.active_attacks)
-    if config_req.max_concurrent < active_count:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot set max_concurrent to {config_req.max_concurrent} because there are {active_count} active attacks. Must be >= {active_count}."
-        )
+    target_value = config_req.max_concurrent
 
-    success = await concurrent_manager.set_max(config_req.max_concurrent)
+    # FIX: Auto-correct instead of blocking
+    if target_value < active_count:
+        corrected_value = active_count + 1
+        logger.warning(
+            f"Requested max_concurrent {target_value} is less than active attacks {active_count}. "
+            f"Auto-correcting to {corrected_value}."
+        )
+        target_value = corrected_value
+
+    success = await concurrent_manager.set_max(target_value)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to set max concurrent")
 
-    logger.info(f"Max concurrent updated to {config_req.max_concurrent} (active attacks: {active_count})")
+    logger.info(f"Max concurrent updated to {target_value} (active attacks: {active_count})")
     return JSONResponse(content={
         "success": True,
-        "message": f"Max concurrent set to {config_req.max_concurrent}",
-        "max_concurrent": config_req.max_concurrent
+        "message": f"Max concurrent set to {target_value}",
+        "max_concurrent": target_value,
+        "auto_corrected": target_value != config_req.max_concurrent,
+        "active_attacks": active_count
     })
 
 
